@@ -1,0 +1,20 @@
+# --- API response caches (large, regenerable, and paid-for locally) ---
+# cache/snapshots holds ~1,000 OddsAPI responses (~33MB). They are reproducible
+# from the API and contain vendor data, so they stay local.
+cache/
+
+# --- secrets ---
+.env
+*.key
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+.claude/
