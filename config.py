@@ -22,6 +22,7 @@ CACHE = ROOT / "cache"
 SNAPSHOT_CACHE_V1 = CACHE / "snapshots"                    # new OddsAPI responses
 NBA_CACHE_V1 = CACHE / "nba"                               # new nba_api responses
 EVENTS_CACHE_V1 = CACHE / "events"                         # historical-events, 1 per date
+BBREF_CACHE_V1 = CACHE / "bbref"                           # basketball-reference salary tables
 
 
 def _load_env(path):

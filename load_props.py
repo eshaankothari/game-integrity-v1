@@ -25,7 +25,7 @@ changes. Historical snapshots never expire, so deferring costs nothing.
     python load_props.py run         # fetch missing closes + write
 """
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -37,6 +37,21 @@ from load_players import make_resolver
 ODDS_URL = ("https://api.the-odds-api.com/v4/historical/sports/basketball_nba/"
             "events/{event_id}/odds")
 FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+# Probe offsets before tip, by snapshot_role.
+#
+# close = tip exactly. v0's cache shows the close ladder never fired past its first
+#         rung (zero snapshots at tip-20min or tip-40min), so one probe suffices.
+# open  = T-12h. NOT the true first tick of the line -- books post progressively and
+#         only ~55% of players who eventually have a line have one this early. It is
+#         chosen because 219 of the 303 currently-analysable events ALREADY have a
+#         T-12h snapshot cached from v0, and no other offset comes close (T-3h has 27
+#         cached across all 1,230). Free reuse beats marginal coverage here.
+#
+#         Players whose line does not exist 12h out keep open_line NULL, and
+#         offset_from_tip_sec records the real window on every row, so heterogeneous
+#         windows are labelled rather than hidden.
+ROLE_OFFSET = {"close": timedelta(0), "open": timedelta(hours=12)}
 BOOKS = ("fanduel", "draftkings", "williamhill_us")     # written; all 10 are fetched
 
 
@@ -105,9 +120,10 @@ def quotes(payload):
     return out
 
 
-def rows_for(event_id, commence, payload, resolve, unresolved, methods):
+def rows_for(event_id, commence, payload, resolve, unresolved, methods,
+             role="close"):
     """One event's payload -> prop_quotes row dicts."""
-    snap_req = commence.astimezone(timezone.utc).strftime(FMT)
+    snap_req = (commence.astimezone(timezone.utc) - ROLE_OFFSET[role]).strftime(FMT)
     actual = (payload or {}).get("timestamp") or snap_req
     # Measured from what the API actually RETURNED, not what we asked for: it snaps
     # back to a 5-minute grid, so a "tip-exact" probe really lands ~4-5 min early.
@@ -123,13 +139,13 @@ def rows_for(event_id, commence, payload, resolve, unresolved, methods):
             "event_id": event_id, "player_name_raw": q["player_name_raw"],
             "player_id": pid, "market": config.MARKET, "book": q["book"],
             "snapshot_requested": snap_req, "snapshot_actual": actual,
-            "line_last_update": q["line_last_update"], "snapshot_role": "close",
+            "line_last_update": q["line_last_update"], "snapshot_role": role,
             "offset_from_tip_sec": offset, "line": q["line"],
             "over_price": q["over_price"], "under_price": q["under_price"]})
     return rows
 
 
-def main(mode="dry", date=None, game=None):
+def main(mode="dry", date=None, game=None, role="close", analysable=False):
     dry, allow_fetch = (mode == "dry"), (mode == "run")
     with db.connect() as conn:
         with conn.cursor() as cur:
@@ -141,20 +157,37 @@ def main(mode="dry", date=None, game=None):
                 FROM odds_events e JOIN games g ON g.game_id = e.game_id
                 WHERE (%s::date IS NULL OR g.game_date = %s::date)
                   AND (%s::text IS NULL OR g.game_id   = %s::text)
-                ORDER BY e.event_id""", (date, date, game, game))
+                  -- `analysable` restricts to events we can actually USE: ones with
+                  -- props AND box scores. Fetching an opening line for a game with no
+                  -- box score buys nothing, because there is no performance to join it
+                  -- to. With L4 barely a third done that is 303 events instead of
+                  -- 1,230 -- a tenfold cut in spend, deferred rather than avoided.
+                  -- Re-run as L4 fills in and it picks up newly-joinable events.
+                  -- NB keep percent signs out of this comment entirely: psycopg
+                  -- parses one as a placeholder and the whole query fails.
+                  AND (NOT %s OR (
+                        EXISTS (SELECT 1 FROM prop_quotes q
+                                WHERE q.event_id = e.event_id AND q.book = %s)
+                    AND EXISTS (SELECT 1 FROM player_games pg
+                                WHERE pg.game_id = g.game_id)))
+                ORDER BY e.event_id""", (date, date, game, game, analysable, BOOKS[0]))
             events = cur.fetchall()
         if not events:
             sys.exit(f"!! no events match {db.scope_label(date, game)}")
         resolve = make_resolver(conn)
 
+        def snap_iso(ct):
+            return (ct.astimezone(timezone.utc) - ROLE_OFFSET[role]).strftime(FMT)
+
         cached = [(e, c) for e, c in events
                   if any(cache.status("snapshot",
-                                      cache.snapshot_key(e, c.astimezone(timezone.utc).strftime(FMT),
-                                                         config.MARKET, b))
+                                      cache.snapshot_key(e, snap_iso(c), config.MARKET, b))
                          for b in ("all", "fanduel"))]
         missing = [(e, c) for e, c in events if (e, c) not in set(cached)]
 
-        print(f"scope                    : {db.scope_label(date, game)}")
+        print(f"role                     : {role}  (T-{int(ROLE_OFFSET[role].total_seconds()//3600)}h before tip)")
+        print(f"scope                    : {db.scope_label(date, game)}"
+              + ("  [analysable only]" if analysable else ""))
         print(f"events                   : {len(events)}")
         print(f"closing snapshot cached  : {len(cached)}  <- free")
         print(f"closing snapshot missing : {len(missing)}")
@@ -168,11 +201,11 @@ def main(mode="dry", date=None, game=None):
         todo = events if allow_fetch else cached
         unresolved, methods, rows, no_line = {}, {}, [], 0
         for eid, ct in todo:
-            iso = ct.astimezone(timezone.utc).strftime(FMT)
+            iso = snap_iso(ct)
             payload, src = snapshot(eid, iso, conn=conn, allow_fetch=allow_fetch)
             if payload is None:
                 continue
-            r = rows_for(eid, ct, payload, resolve, unresolved, methods)
+            r = rows_for(eid, ct, payload, resolve, unresolved, methods, role)
             if not r:
                 no_line += 1
             rows.extend(r)
@@ -202,5 +235,8 @@ def main(mode="dry", date=None, game=None):
 if __name__ == "__main__":
     _args = sys.argv[1:]
     _mode = next((a for a in _args if a in ("run", "cached")), "dry")
+    _role = next((_args[i + 1] for i, a in enumerate(_args)
+                  if a == "--role" and i + 1 < len(_args)), "close")
     _date, _game = db.scope()
-    main(mode=_mode, date=_date, game=_game)
+    main(mode=_mode, date=_date, game=_game, role=_role,
+         analysable="--analysable" in _args)

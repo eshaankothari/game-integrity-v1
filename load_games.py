@@ -1,6 +1,6 @@
 """L1b: the 2023-24 regular-season games spine -> `games`.
 
-SUMMARY: Loads all the NBA games from a season into GAMES db. 
+SUMMARY: Loads all the NBA games from a season into GAMES db using NBA API endpoint. 
 Live tracker will call for each new gameday, so that we can see which games are coming up.
 
 ONE API call for the whole season. LeagueGameFinder returns every game twice --

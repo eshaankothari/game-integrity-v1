@@ -57,6 +57,7 @@ CREDITS_PER_CALL = {
     "historical_events": 1,
     "historical_odds": 10,
     "leaguegamefinder": 0,          # nba_api is free
+    "bbref_salaries": 0,            # scraped HTML, free
 }
 
 _last_used = None                   # running x-requests-used, for measured deltas
@@ -68,6 +69,8 @@ DIRS = {
     "snapshot": (config.SNAPSHOT_CACHE, config.SNAPSHOT_CACHE_V1),
     "events":   (config.EVENTS_CACHE,   config.EVENTS_CACHE_V1),
     "nba":      (config.NBA_CACHE,      config.NBA_CACHE_V1),
+    # No v0 half: v0 never scraped basketball-reference, so there is nothing to reuse.
+    "bbref":    (None,                  config.BBREF_CACHE_V1),
 }
 
 _memo = OrderedDict()               # in-process: same key twice = one disk read
@@ -93,6 +96,11 @@ def events_key(date):
 
 def nba_key(kind, ident):
     """'box_0022300001.csv' | 'adv_' | 'hustle_' | 'track_' | 'sb_2023-12-31.csv'"""
+    return f"{kind}_{ident}.csv"
+
+
+def bbref_key(kind, ident):
+    """'salaries_2024_BOS.csv'. Parsed table, not raw HTML -- same shape as nba_key."""
     return f"{kind}_{ident}.csv"
 
 
@@ -223,7 +231,23 @@ def measured_delta(meta, endpoint):
         if _last_used is not None:
             delta = used - _last_used
         _last_used = used
-    return delta if delta is not None else CREDITS_PER_CALL.get(endpoint, 0)
+    if delta is None:
+        return CREDITS_PER_CALL.get(endpoint, 0)
+    # A delta far above the declared rate means the seed was STALE, not that this
+    # single call cost that much. It happens when report_plan() reads the balance,
+    # then something else moves the counter before the first billed call -- a DRY run
+    # in another shell, say. Observed once: a first call reported 10 when the counter
+    # had moved 30, a 20-credit under-report.
+    #
+    # The delta is still the truthful figure for what was consumed since the last
+    # reading, so it is returned as-is rather than clamped -- under-reporting spend is
+    # the worse failure. The warning marks it so a lumpy first row is not mistaken for
+    # a rate change.
+    rate = CREDITS_PER_CALL.get(endpoint)
+    if rate and delta > rate:
+        print(f"   (note: {endpoint} delta {delta} exceeds the {rate}/call rate -- "
+              f"stale baseline, absorbing {delta - rate} credits spent elsewhere)")
+    return delta
 
 
 # --- credit reporting -------------------------------------------------------

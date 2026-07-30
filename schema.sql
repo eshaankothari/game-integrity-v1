@@ -27,7 +27,21 @@ CREATE TABLE teams (
 CREATE TABLE players (
     player_id       INTEGER PRIMARY KEY,       -- NBA personId
     full_name       TEXT NOT NULL,
-    canonical_ascii TEXT NOT NULL              -- accent/case-stripped join key
+    canonical_ascii TEXT NOT NULL,             -- accent/case-stripped join key
+
+    -- Player ATTRIBUTES, from CommonTeamRoster (30 calls, one per team). They live
+    -- here rather than on player_games because they do not vary game to game.
+    --
+    -- position is the one L5 needs: a centre's rebound z-score and a guard's are
+    -- not comparable quantities, so a purely league-wide baseline makes every
+    -- centre look like a rebounding outlier. It CANNOT come from the box score --
+    -- that column is populated for starters only.
+    position    TEXT,                          -- 'G' | 'F' | 'C' | 'G-F' | ...
+    height_in   INTEGER,                       -- '6-8' parsed to inches
+    weight_lb   INTEGER,
+    birth_date  DATE,
+    experience  INTEGER,                       -- seasons played; 'R' rookie -> 0
+    school      TEXT
 );
 CREATE INDEX players_canonical_idx ON players (canonical_ascii);
 
@@ -144,7 +158,14 @@ CREATE TABLE player_games (
     game_id   TEXT NOT NULL REFERENCES games (game_id),
     player_id INTEGER NOT NULL REFERENCES players (player_id),
     team_id   INTEGER REFERENCES teams (team_id),
-    started   BOOLEAN,
+    started   BOOLEAN,                       -- inferred: box-score `position` is
+                                             -- filled for starters only
+
+    -- Verbatim box-score `comment` when the player did not appear: "DNP - Coach's
+    -- Decision", "DND - Injury", "NWT - Not With Team". NULL means they played.
+    -- The REASON matters: a healthy scratch on a night with unusual line movement
+    -- is a different signal from a known injury.
+    dnp_reason TEXT,
 
     -- BoxScoreTraditionalV3
     minutes             NUMERIC(6,3),          -- decimal minutes ('34:12' -> 34.200)
@@ -209,6 +230,56 @@ CREATE INDEX player_games_incomplete_idx ON player_games (game_id)
 
 
 -- ---------------------------------------------------------------------------
+-- L5. standardised features
+-- ---------------------------------------------------------------------------
+
+-- One row per (player-game, baseline_mode). The SAME player-game appears once per
+-- mode, because a z-score is meaningless without knowing what it was measured
+-- against -- so the mode is part of the key, not a footnote.
+CREATE TABLE player_game_z (
+    player_id     INTEGER NOT NULL REFERENCES players (player_id),
+    game_id       TEXT    NOT NULL REFERENCES games (game_id),
+    baseline_mode TEXT    NOT NULL
+                  CHECK (baseline_mode IN ('league_season', 'league_to_date',
+                                           'player_to_date')),
+    game_date     DATE    NOT NULL,
+
+    -- RAW stats, z-scored. No per-36 rate adjustment: minutes_z is itself a
+    -- feature, so playing time stays available to the model rather than being
+    -- divided out, and a low raw count IS the event of interest.
+    minutes_z        NUMERIC(8,4),
+    points_z         NUMERIC(8,4),
+    fga_z            NUMERIC(8,4),
+    usage_pct_z      NUMERIC(8,4),
+    turnover_ratio_z NUMERIC(8,4),
+    distance_z       NUMERIC(8,4),
+    touches_z        NUMERIC(8,4),
+    rebounds_z       NUMERIC(8,4),
+    assists_z        NUMERIC(8,4),
+
+    -- The market's own forecast for THIS player tonight, and the miss against it.
+    -- League-wide z-scores are near-useless for stars: Lillard scoring 6 on a 30.5
+    -- line was only points_z = -0.54, because the league mean includes bench
+    -- players. The same row is margin_vs_line_z = -3.81.
+    close_line       NUMERIC(5,1),
+    margin_vs_line   NUMERIC(6,1),          -- points - close_line
+    margin_vs_line_z NUMERIC(8,4),
+
+    -- Mean of the sign-oriented z's: every feature flipped so that MORE NEGATIVE
+    -- means worse. Monotone in "underperformance", unlike the raw z's which point
+    -- in different directions.
+    combined_score   NUMERIC(8,4),
+    n_features       INTEGER,               -- how many z's the mean was taken over
+    n_baseline       INTEGER,               -- population size behind the z-scores
+
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (player_id, game_id, baseline_mode)
+);
+CREATE INDEX player_game_z_score_idx ON player_game_z (baseline_mode, combined_score);
+CREATE INDEX player_game_z_margin_idx ON player_game_z (baseline_mode, margin_vs_line_z);
+
+
+-- ---------------------------------------------------------------------------
 -- L0. spend + provenance ledger
 -- ---------------------------------------------------------------------------
 
@@ -218,7 +289,7 @@ CREATE INDEX player_games_incomplete_idx ON player_games (game_id)
 CREATE TABLE api_calls (
     id                 BIGSERIAL PRIMARY KEY,
     called_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    api                TEXT NOT NULL CHECK (api IN ('oddsapi', 'nba')),
+    api                TEXT NOT NULL CHECK (api IN ('oddsapi', 'nba', 'bbref')),
     endpoint           TEXT NOT NULL,          -- 'historical_events' | 'historical_odds' | ...
     params             JSONB,
     http_status        INTEGER,
@@ -231,6 +302,36 @@ CREATE TABLE api_calls (
     error              TEXT
 );
 CREATE INDEX api_calls_billed_idx ON api_calls (api, called_at) WHERE NOT cache_hit;
+
+
+-- Season salary, the INCENTIVE covariate. What a player risks by throwing a game is
+-- the thing salary measures, and it varies by two orders of magnitude across a roster:
+-- a max player risks ~$50M a year, a two-way ~$560K. That asymmetry is the single
+-- strongest prior available for who is even plausibly corruptible.
+--
+-- SEASON-KEYED, and deliberately NOT a column on `players`. `players` holds all 5,026
+-- historical NBA players and is season-agnostic; salary changes every year, so hanging
+-- it off `players` would break the moment a second season is loaded. (`experience` on
+-- `players` has exactly that latent problem today -- fine for a one-season build.)
+--
+-- salary IS NULL IS MEANINGFUL, NOT MISSING. Basketball-reference lists no figure for
+-- two-way and 10-day contracts, so a blank marks the fringe-roster player rather than
+-- a gap in the data -- see `has_listed_salary`. Treating those rows as unknown would
+-- discard the population the whole exercise is most interested in.
+CREATE TABLE player_salaries (
+    player_id         INTEGER NOT NULL REFERENCES players (player_id),
+    season            TEXT    NOT NULL,        -- '2023-24', matches config.SEASON
+    player_name_raw   TEXT,                    -- name as scraped, for auditing the match
+    team_abbr         TEXT,                    -- NBA abbreviation, not the bbref one
+    salary            BIGINT,                  -- NULL => not listed (two-way / 10-day)
+    has_listed_salary BOOLEAN NOT NULL,
+    n_teams           INTEGER,                 -- >1 => traded mid-season
+    salary_rank       INTEGER,                 -- 1 = highest paid, among listed only
+    salary_pct        NUMERIC(6,4),            -- 0-1 percentile, among listed only
+    source            TEXT,
+    loaded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (player_id, season)
+);
 
 
 COMMIT;

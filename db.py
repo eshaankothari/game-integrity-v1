@@ -38,6 +38,15 @@ def upsert(conn, table, rows, conflict, update=None):
     if not rows:
         return 0
     cols = list(rows[0])
+    # The column list comes from rows[0], so every row must have the same keys.
+    # A ragged row set would otherwise take the first row's shape and either raise
+    # a bare KeyError deep in executemany or, worse, silently drop columns that
+    # only later rows carry. Check once, name the offender.
+    if any(r.keys() != rows[0].keys() for r in rows):
+        odd = next(r for r in rows if r.keys() != rows[0].keys())
+        raise ValueError(
+            f"upsert into {table!r}: rows are not homogeneous. "
+            f"missing={sorted(set(cols) - set(odd))} extra={sorted(set(odd) - set(cols))}")
     upd = [c for c in (cols if update is None else update) if c not in conflict]
     action = (sql.SQL("DO UPDATE SET ") + sql.SQL(", ").join(
                   sql.SQL("{c} = EXCLUDED.{c}").format(c=sql.Identifier(c)) for c in upd)
@@ -51,6 +60,37 @@ def upsert(conn, table, rows, conflict, update=None):
     with conn.cursor() as cur:
         cur.executemany(stmt, [[r[c] for c in cols] for r in rows])
     return len(rows)
+
+
+def update(conn, table, rows, key):
+    """Bulk UPDATE of existing rows. Returns rows actually matched.
+
+    Use this, NOT upsert(), when `rows` carries only a SUBSET of the table's
+    columns. ON CONFLICT DO UPDATE builds the proposed INSERT tuple and checks
+    NOT NULL on it *before* resolving the conflict, so an upsert that omits a
+    NOT NULL column fails even when the row already exists and the UPDATE branch
+    would have been taken. A plain UPDATE never forms that tuple.
+
+    Rows whose key is absent are silently skipped -- this only ever enriches.
+    """
+    if not rows:
+        return 0
+    cols = [c for c in rows[0] if c not in key]
+    if not cols:
+        return 0
+    if any(r.keys() != rows[0].keys() for r in rows):
+        raise ValueError(f"update on {table!r}: rows are not homogeneous")
+    stmt = sql.SQL("UPDATE {t} SET {sets} WHERE {where}").format(
+        t=sql.Identifier(table),
+        sets=sql.SQL(", ").join(
+            sql.SQL("{c} = {p}").format(c=sql.Identifier(c), p=sql.Placeholder())
+            for c in cols),
+        where=sql.SQL(" AND ").join(
+            sql.SQL("{c} = {p}").format(c=sql.Identifier(c), p=sql.Placeholder())
+            for c in key))
+    with conn.cursor() as cur:
+        cur.executemany(stmt, [[r[c] for c in cols] + [r[c] for c in key] for r in rows])
+        return cur.rowcount
 
 
 def count(conn, table, where=None, params=()):
