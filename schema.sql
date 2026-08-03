@@ -236,56 +236,25 @@ CREATE INDEX player_games_incomplete_idx ON player_games (game_id)
 -- One row per (player-game, baseline_mode). The SAME player-game appears once per
 -- mode, because a z-score is meaningless without knowing what it was measured
 -- against -- so the mode is part of the key, not a footnote.
-CREATE TABLE player_game_z (
-    player_id     INTEGER NOT NULL REFERENCES players (player_id),
-    game_id       TEXT    NOT NULL REFERENCES games (game_id),
-    baseline_mode TEXT    NOT NULL
-                  CHECK (baseline_mode IN ('league_season', 'league_to_date',
-                                           'player_to_date')),
-    game_date     DATE    NOT NULL,
+-- player_game_z AND player_game_scores ARE OWNED BY THEIR LAYERS, NOT BY THIS FILE.
+--
+-- Both are created and migrated by the code that writes them -- standardize.py (L5)
+-- and export_candidates.py (L6) -- because their shape follows the scoring methodology
+-- and would otherwise drift out of sync with it every time a component changed.
+--
+--   player_game_features   RAW. Box score, lines, prices, open->close movement.
+--                          Wrong only if the ingest was wrong.
+--   player_game_z          STANDARDISED. The five performance components, the four
+--                          market components, and the three blocks they combine into.
+--                          Recomputed whenever the baseline population changes.
+--   player_game_scores     THE FRONTEND TABLE. Every propped player-game with its rank,
+--                          `in_shortlist`, and `cut_failed` -- the first cut that
+--                          eliminated it, so the UI can explain an absence.
+--
+-- Run `python standardize.py run && python export_candidates.py` to build all three.
+-- L5 drops and rebuilds player_game_z if it still carries `baseline_mode`, the primary
+-- key of the retired four-baseline sweep.
 
-    -- RAW stats, z-scored. No per-36 rate adjustment: minutes_z is itself a
-    -- feature, so playing time stays available to the model rather than being
-    -- divided out, and a low raw count IS the event of interest.
-    minutes_z        NUMERIC(8,4),
-    points_z         NUMERIC(8,4),
-    fga_z            NUMERIC(8,4),
-    usage_pct_z      NUMERIC(8,4),
-    turnover_ratio_z NUMERIC(8,4),
-    distance_z       NUMERIC(8,4),
-    touches_z        NUMERIC(8,4),
-    rebounds_z       NUMERIC(8,4),
-    assists_z        NUMERIC(8,4),
-
-    -- The market's own forecast for THIS player tonight, and the miss against it.
-    -- League-wide z-scores are near-useless for stars: Lillard scoring 6 on a 30.5
-    -- line was only points_z = -0.54, because the league mean includes bench
-    -- players. The same row is margin_vs_line_z = -3.81.
-    close_line       NUMERIC(5,1),
-    margin_vs_line   NUMERIC(6,1),          -- points - close_line
-    margin_vs_line_z NUMERIC(8,4),
-
-    -- Mean of the sign-oriented z's: every feature flipped so that MORE NEGATIVE
-    -- means worse. Monotone in "underperformance", unlike the raw z's which point
-    -- in different directions.
-    combined_score   NUMERIC(8,4),
-    n_features       INTEGER,               -- how many z's the mean was taken over
-    n_baseline       INTEGER,               -- population size behind the z-scores
-
-    computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (player_id, game_id, baseline_mode)
-);
-CREATE INDEX player_game_z_score_idx ON player_game_z (baseline_mode, combined_score);
-CREATE INDEX player_game_z_margin_idx ON player_game_z (baseline_mode, margin_vs_line_z);
-
-
--- ---------------------------------------------------------------------------
--- L0. spend + provenance ledger
--- ---------------------------------------------------------------------------
-
--- Measures credits from OddsAPI's own response headers rather than inferring
--- them from a billing formula. Also the audit trail for which cache file backs
--- which row, and which requests were served free from the v0 caches.
 CREATE TABLE api_calls (
     id                 BIGSERIAL PRIMARY KEY,
     called_at          TIMESTAMPTZ NOT NULL DEFAULT now(),

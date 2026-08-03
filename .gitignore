@@ -21,3 +21,10 @@ venv/
 
 # analysis exports (regenerable)
 out/
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# editor backups
+*.bak

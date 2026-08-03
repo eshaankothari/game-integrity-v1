@@ -44,8 +44,14 @@ import db
 
 warnings.filterwarnings("ignore", message=".*SQLAlchemy.*")
 
+# game_score and the effort components added so the SCORING methodology can be run
+# on context-adjusted inputs. Residualised per component rather than on the finished
+# composite: context R2 ranges from ~20 percent for distance to ~2 percent for
+# box_outs, and averaging first destroys the information about which needs what.
 STATS = ["points", "fga", "rebounds", "assists", "usage_pct",
-         "turnover_ratio", "distance", "touches", "minutes"]
+         "turnover_ratio", "distance", "touches", "minutes",
+         "game_score", "passes", "contested_shots", "deflections",
+         "loose_balls", "box_outs", "screen_assists"]
 
 CONTEXT = ["abs_margin", "rest_days", "is_b2b", "is_home",
            "altitude_ft", "pace", "days_into_season"]
@@ -120,6 +126,13 @@ wins AS (        -- season win rate, a crude proxy for how much a team rests sta
 SELECT pg.player_id, pg.game_id, g.game_date,
        pg.points, pg.fga, pg.rebounds, pg.assists,
        pg.usage_pct, pg.turnover_ratio, pg.distance, pg.touches, pg.minutes,
+       pg.passes, pg.contested_shots, pg.deflections, pg.loose_balls,
+       pg.box_outs, pg.screen_assists,
+       (pg.points + 0.4*pg.fgm - 0.7*pg.fga - 0.4*(pg.fta - pg.ftm)
+        + 0.7*coalesce(pg.rebounds_off,0)
+        + 0.3*(pg.rebounds - coalesce(pg.rebounds_off,0))
+        + pg.steals + 0.7*pg.assists + 0.7*pg.blocks
+        - 0.4*pg.fouls - pg.turnovers) AS game_score,
        gp.pace,
        avg(pg.minutes) OVER (PARTITION BY pg.player_id) AS season_min,
        c.abs_margin, c.rest_days, c.is_b2b, c.is_home, c.altitude_ft,
