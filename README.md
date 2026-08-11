@@ -41,7 +41,7 @@ make setup      # pip install + npm ci, both languages
 make demo       # API on :8000 and dashboard on :5173, together
 ```
 
-Then open **http://localhost:5173**.
+Then open the **localhost** server link.
 
 **You do not need API keys for the demo, just for the data pipelines** 
 The database ships already scored; keys are only for re-running ingest, which is already done. `cp .env.example .env` if you plan to.
@@ -57,7 +57,7 @@ The database ships already scored; keys are only for re-running ingest, which is
 **Check it worked:** `make check` prints `shortlist: 3207`, and the landing page reports
 **15,494 player-games**.
 
-## Two database options
+## Two database options - Postgres or Duckdb
 
 The API reads either backend — same code, same responses, verified endpoint by endpoint.
 
@@ -68,9 +68,9 @@ restore, no version matching:
 GI_DB=game_integrity.duckdb make demo
 ```
 
-**Postgres (the source of truth).** Every loader writes here, and the full history —
-including the spend ledger and the rejected residual models — lives here. Used whenever
-`GI_DB` is unset:
+**Postgres (the source of truth).** While the demo can run on duckdb, the data pipelines 
+currently load to postgres making it the source of truth and the duckdb a static snapshot
+of the postgres, especially when `GI_DB` is unset (meaning postgres by default):
 
 ```bash
 createdb game_integrity_v1 && pg_restore -d game_integrity_v1 game_integrity.dump
