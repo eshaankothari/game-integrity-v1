@@ -71,7 +71,7 @@ GI_DB=game_integrity.duckdb make demo
 
 **Postgres (the source of truth).** While the demo can run on duckdb, the data pipelines 
 currently load to postgres making it the source of truth and the duckdb a static snapshot
-of the postgres, especially when `GI_DB` is unset (meaning postgres by default):
+of the postgres, especially when `GI_DB` is unset (meaning postgres by default)
 
 ```bash
 createdb game_integrity_v1 && pg_restore -d game_integrity_v1 game_integrity.dump

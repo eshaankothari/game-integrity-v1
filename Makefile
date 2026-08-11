@@ -6,7 +6,7 @@
 # Run `make` on its own to list the targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-py setup-ui api ui demo duckdb check clean
+.PHONY: help setup setup-py setup-ui api ui demo duckdb postgres check clean
 
 PY  ?= python3
 DB  ?= game_integrity.duckdb
@@ -50,6 +50,9 @@ demo:  ## API + dashboard together; Ctrl-C stops both
 
 duckdb:  ## export Postgres -> a single .duckdb file for handoff
 	$(PY) to_duckdb.py run
+
+postgres:  ## load the shipped .duckdb file into a Postgres server
+	$(PY) to_postgres.py run
 
 check:  ## confirm the database is present and scored
 	@$(PY) -c "import config, db; \
