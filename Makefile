@@ -56,8 +56,21 @@ dump:  ## export Postgres -> game_integrity.dump (all 21 tables + constraints)
 	pg_dump $(PGDB) -Fc -f game_integrity.dump
 	@ls -lh game_integrity.dump | awk '{print "  wrote game_integrity.dump", $$5}'
 
-restore:  ## load game_integrity.dump into a fresh Postgres database
-	createdb $(PGDB) || true
+restore:  ## load game_integrity.dump into a FRESH Postgres database
+	@# Refuse a non-empty target. pg_restore has no "only if absent" mode, so restoring
+	@# over an existing schema emits one error per table, index and constraint -- 114 of
+	@# them here -- while the primary keys silently reject the duplicate rows. It looks
+	@# catastrophic and changes nothing, which is the worst combination to hand someone.
+	@if psql -lqt 2>/dev/null | cut -d'|' -f1 | grep -qw $(PGDB); then \
+	  n=$$(psql -d $(PGDB) -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"); \
+	  if [ "$$n" != "0" ]; then \
+	    echo "!! database '$(PGDB)' already exists and holds $$n tables."; \
+	    echo "   restore is for an EMPTY database. Either:"; \
+	    echo "     PGDB=game_integrity_copy make restore    # somewhere else"; \
+	    echo "     dropdb $(PGDB) && make restore           # replace it (destructive)"; \
+	    exit 1; \
+	  fi; \
+	else createdb $(PGDB); fi
 	pg_restore -d $(PGDB) --no-owner --no-privileges game_integrity.dump
 	@echo "  restored -> $(PGDB).  Run: make demo"
 

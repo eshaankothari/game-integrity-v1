@@ -957,7 +957,12 @@ def cloud(shortlist_only: bool = False):
           FROM player_game_scores s
           JOIN player_game_z z USING (player_id, game_id)
          WHERE {where}s.performance_100 IS NOT NULL
-           AND s.market_100 IS NOT NULL AND s.motive_100 IS NOT NULL""")
+           AND s.market_100 IS NOT NULL AND s.motive_100 IS NOT NULL
+         -- Ordered only so the response is reproducible. With no ORDER BY the rows
+         -- arrive in heap order, which differs between a freshly restored table and
+         -- one updated in place -- so two databases holding identical data returned
+         -- different payloads. The cloud is a scatter; order changes nothing on screen.
+         ORDER BY s.player_id, s.game_id""")
     cuts = {}
     out = []
     for r in rows:
