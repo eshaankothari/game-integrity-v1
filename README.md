@@ -43,8 +43,8 @@ make demo       # API on :8000 and dashboard on :5173, together
 
 Then open **http://localhost:5173**.
 
-**You do not need API keys.** The database ships already scored; keys are only for
-re-running ingest, which is already done. `cp .env.example .env` if you plan to.
+**You do not need API keys for the demo, just for the data pipelines** 
+The database ships already scored; keys are only for re-running ingest, which is already done. `cp .env.example .env` if you plan to.
 
 | command | does |
 |---|---|
