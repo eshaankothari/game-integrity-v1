@@ -1093,24 +1093,3 @@ def isolation(limit: int = Query(15, le=100)):
             "reason": "Isolation Forest lost to the weighted sum in all four "
                       "configurations tested; it scores rarity and the target class "
                       "is a mode."}
-
-
-# --- the dashboard itself -------------------------------------------------
-#
-# Serving the built SPA from the API turns two servers into one, and removes Node
-# from what a viewer has to install: `frontend/dist` is committed, so there is no
-# build step either. Node is still needed to CHANGE the frontend, never to run it.
-#
-# MOUNTED LAST, DELIBERATELY. A mount at "/" swallows every path that no earlier
-# route matched, so declaring it above the API would shadow /api/* and return
-# index.html for endpoints that exist. html=True also serves index.html for unknown
-# paths, which is what a client-side router needs.
-_DIST = ROOT / "frontend" / "dist"
-if _DIST.is_dir():
-    from fastapi.staticfiles import StaticFiles
-    app.mount("/", StaticFiles(directory=_DIST, html=True), name="dashboard")
-else:                                    # pragma: no cover - dev without a build
-    @app.get("/")
-    def _no_build():
-        return {"detail": "frontend/dist not found. Run `make ui` for the dev server, "
-                          "or `cd frontend && npm run build` to build it."}

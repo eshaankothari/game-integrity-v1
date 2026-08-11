@@ -15,58 +15,52 @@ once. Full statistical reasoning lives in [METHODOLOGY.md](METHODOLOGY.md).
 
 ## Prerequisites
 
-**To run the demo: Python 3.11+ and nothing else.**
+Installed however your machine prefers (`brew`, `apt`, installer). Nothing below is pinned
+by the dependency files — those install *libraries*, not runtimes.
 
 | | version | needed for |
 |---|---|---|
-| **Python** | 3.11+ (built on 3.13) | **the demo, and everything else** |
-| Node | 20+ (built on 24) | *optional* — only to **edit** the dashboard |
-| PostgreSQL | 14+ (built on 18) | *optional* — only to **re-run the pipeline** |
+| **Python** | 3.11+ (built on 3.13) | pipeline and API |
+| **Node** | 20+ (built on 24) | dashboard build |
+| PostgreSQL | 14+ (built on 18) | **optional** — only to re-run the pipeline |
 
-Node and Postgres are both optional because their outputs are committed: the dashboard is
-pre-built into `frontend/dist`, and the scored data sits in `game_integrity.duckdb`.
+**You do not need PostgreSQL to run the demo.** The repo ships a DuckDB file that needs no
+server; see "Two database options" below.
 
-| file | installs | when |
-|---|---|---|
-| **`requirements-demo.txt`** | **5 Python packages** | **to run the demo** |
-| `requirements.txt` | those plus the pipeline and analysis libraries | to re-run ingest or regenerate figures |
-| `frontend/package.json` | Node packages (`npm ci`) | to edit the dashboard |
+Dependencies are declared per language — `requirements.txt` is **pip only** and installs
+nothing for the frontend — but you never have to run the two separately:
+
+| file | installs |
+|---|---|
+| `requirements.txt` | Python packages |
+| `frontend/package.json` + `package-lock.json` | Node packages |
 
 ## Quick start
 
-**One server, five Python packages, no Node.** The dashboard is pre-built into
-`frontend/dist` and the data is in `game_integrity.duckdb` — both committed, so there is
-nothing to build and no database to restore.
+Every command lives in the `Makefile`. Run `make` on its own to see them all.
 
 ```bash
-pip install -r requirements-demo.txt
-make serve
+make setup      # pip install + npm ci, both languages
+make demo       # API on :8000 and dashboard on :5173, together
 ```
 
-Then open **http://localhost:8000**.
+Then open the **localhost** server link.
 
-No API keys. No PostgreSQL. No `npm`. FastAPI serves the dashboard and the API from the
-same port, so there is one process and one URL.
+**You do not need API keys for the demo, just for the data pipelines** 
+The database ships already scored; keys are only for re-running ingest, which is already done. `cp .env.example .env` if you plan to.
 
 | command | does |
 |---|---|
-| **`make serve`** | **the demo — one server on :8000** |
+| `make setup` | install everything |
+| `make demo` | run API + dashboard together (prefix with `GI_DB=game_integrity.duckdb`) |
+| `make api` / `make ui` | run one of them alone |
 | `make check` | confirm the database is present and scored |
-| `make restore` | load `game_integrity.dump` into a *fresh* Postgres database |
-| `make dump` / `make duckdb` | regenerate either export from Postgres |
+| `make restore` | load `game_integrity.dump` into a Postgres database |
+| `make dump` | export Postgres → `game_integrity.dump` (all 22 tables) |
+| `make duckdb` | export Postgres → `game_integrity.duckdb` (dashboard tables) |
 
-**Check it worked:** the landing page reports **15,494 player-games**, and
-`GI_DB=game_integrity.duckdb make check` prints `shortlist: 3207`.
-
-### Changing the frontend
-
-Only if you want to *edit* the dashboard. This is the path that needs Node 20+:
-
-```bash
-make setup     # pip install + npm ci
-make demo      # API on :8000, Vite dev server on :5173, hot reload
-make build     # rebuild frontend/dist so `make serve` picks up the change
-```
+**Check it worked:** `GI_DB=game_integrity.duckdb make check` prints `shortlist: 3207`,
+and the landing page reports **15,494 player-games**.
 
 ## Two database options - Postgres or Duckdb
 

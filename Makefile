@@ -6,7 +6,7 @@
 # Run `make` on its own to list the targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-py setup-ui serve build api ui demo duckdb dump restore check clean
+.PHONY: help setup setup-py setup-ui api ui demo duckdb dump restore check clean
 
 PY   ?= python3
 DB   ?= game_integrity.duckdb
@@ -16,8 +16,8 @@ help:  ## show this list
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "  Just run it:   pip install -r requirements-demo.txt && make serve"
-	@echo "  Develop it:    make setup && make demo"
+	@echo "  First time:   make setup && make demo"
+	@echo "  No Postgres?  make setup && GI_DB=$(DB) make demo"
 
 # --- install ---------------------------------------------------------------
 
@@ -39,14 +39,7 @@ api:  ## API only, port 8000
 ui:  ## dashboard only, port 5173 (proxies /api to 8000)
 	cd frontend && npm run dev
 
-serve:  ## THE DEMO: one server, no Node needed -> http://localhost:8000
-	@echo "  -> http://localhost:8000"
-	@GI_DB=$(DB) $(PY) -m uvicorn server.app:app --port 8000
-
-build:  ## rebuild frontend/dist after changing the frontend (needs Node)
-	cd frontend && npm run build
-
-demo:  ## dev mode: API + Vite dev server, hot reload (needs Node)
+demo:  ## API + dashboard together; Ctrl-C stops both
 	@echo "API      -> http://localhost:8000/api/docs"
 	@echo "dashboard-> http://localhost:5173"
 	@echo ""
