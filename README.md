@@ -49,20 +49,21 @@ The database ships already scored; keys are only for re-running ingest, which is
 | command | does |
 |---|---|
 | `make setup` | install everything |
-| `make demo` | run API + dashboard together |
+| `make demo` | run API + dashboard together (prefix with `GI_DB=game_integrity.duckdb`) |
 | `make api` / `make ui` | run one of them alone |
 | `make check` | confirm the database is present and scored |
 | `make duckdb` | export Postgres to a single-file database |
 
-**Check it worked:** `make check` prints `shortlist: 3207`, and the landing page reports
-**15,494 player-games**.
+**Check it worked:** `GI_DB=game_integrity.duckdb make check` prints `shortlist: 3207`,
+and the landing page reports **15,494 player-games**.
 
 ## Two database options - Postgres or Duckdb
 
 The API reads either backend — same code, same responses, verified endpoint by endpoint.
 
-**DuckDB (default for a handoff).** A single file, already in this repo. No server, no
-restore, no version matching:
+**DuckDB — start here.** A single 33 MB file, already in this repo and already scored.
+No server, no restore, no version matching. It carries all 17 tables the dashboard reads,
+including the 422,884 play-by-play events behind the shot chart:
 
 ```bash
 GI_DB=game_integrity.duckdb make demo

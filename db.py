@@ -25,8 +25,23 @@ import config
 @contextmanager
 def connect(autocommit=False):
     """Connection to DATABASE_URL; commits on clean exit, rolls back on exception."""
-    with psycopg.connect(config.DATABASE_URL, autocommit=autocommit) as conn:
-        yield conn
+    try:
+        with psycopg.connect(config.DATABASE_URL, autocommit=autocommit) as conn:
+            yield conn
+    except psycopg.OperationalError as e:
+        # The most likely person to hit this is someone who just cloned the repo and
+        # has no Postgres at all. The shipped DuckDB file is right there and answers
+        # every read the dashboard makes, so say so rather than leaving them with a
+        # libpq socket error to interpret.
+        duck = config.ROOT / "game_integrity.duckdb"
+        if duck.exists() and config.BACKEND == "postgres":
+            raise SystemExit(
+                f"Could not reach Postgres ({config.DATABASE_URL}).\n\n"
+                f"This repo ships a database that needs no server. Run:\n\n"
+                f"    GI_DB={duck.name} make demo\n\n"
+                f"Set DATABASE_URL only if you actually want the Postgres source of "
+                f"truth.\n\noriginal error: {e}") from None
+        raise
 
 
 # --- read path, backend-agnostic -------------------------------------------
