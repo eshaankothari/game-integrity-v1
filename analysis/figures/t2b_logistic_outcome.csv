@@ -1,0 +1,6 @@
+feature,coef,ci_lo,ci_hi,crosses_0
+mk_p_price,0.039,-0.0359,0.1207,yes
+mk_p_line,-0.0694,-0.148,0.0044,yes
+mk_line_mv,0.0,0.0,0.0,NO
+mk_price_mv,0.0112,-0.0672,0.0898,yes
+motive,0.0384,-0.0253,0.111,yes

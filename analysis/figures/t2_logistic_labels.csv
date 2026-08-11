@@ -1,0 +1,4 @@
+fold,coef_performance,coef_market,coef_motive,w_performance,w_market,w_motive,auc_train,auc_test
+hold out Malik Beasley,0.626,1.05,22.299,3%,4%,93%,0.996,0.758
+hold out Jontay Porter,1.154,-1.151,11.957,8%,8%,84%,0.967,0.6
+all data (in-sample),1.024,-0.86,12.367,7%,6%,87%,0.972,0.972

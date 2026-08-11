@@ -1,0 +1,40 @@
+# --- API response caches (large, regenerable, and paid-for locally) ---
+# cache/snapshots holds ~1,000 OddsAPI responses (~33MB). They are reproducible
+# from the API and contain vendor data, so they stay local.
+cache/
+
+# --- secrets ---
+.env
+*.key
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# analysis exports (regenerable)
+out/
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# editor backups
+*.bak
+
+# --- exploratory work, kept locally but not shipped ---
+# 27 scripts and 105MB of plots behind decisions that are already recorded in
+# METHODOLOGY.md ("Tested and rejected"). They stay on the author's machine;
+# a reader needs the verdicts, not the dead ends.
+experiments/
+
+# never commit real credentials -- .env.example documents the shape instead
+.env.*
+!.env.example

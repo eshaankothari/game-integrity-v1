@@ -1,0 +1,9 @@
+note
+"F1: decile 1 13.6% -> decile 10 95.9%, strictly increasing, base rate 51.4%"
+"F2: over 2951 zero-point games, own-z ranges -2.84 to -0.40 and correlates r=-0.864 with scoring level; shortfall is constant at 1.000"
+F3: within-player z of shortfall on zero-point games spans +0.50 to +4.87 and correlates r=+0.741 with scoring level; league-wide z is flat
+"F4: corr(-game_z, -effort_z)=+0.530, corr(-game_z, shortfall_z)=+0.683, corr(-effort_z, shortfall_z)=+0.403"
+"F5: under-hit by closing-price quintile 53.1% -> 48.1% (monotone, n=15,498); by line-movement quintile 50.2% -> 51.5% (n=7,990) vs base 51.4%"
+"F6: salary skew +1.78, 67% of players below the mean; the bottom half of earners occupies only 0.38 of the z range vs 0.50 of the percentile range"
+"F7: block corr perf/market +0.072, perf/motive -0.014, market/motive +0.385; effective weights 42.3%/25.0%/32.7% vs stated 45/30/25"
+"F8: shipped cost 2.471, random median 2.651, 34.3% of 20,000 Dirichlet draws beat it"

@@ -1,0 +1,81 @@
+/* Consulting-exhibit identity: flat, white, precise. Light is the default;
+   .dark is the same system on the deep navy ground.
+   Grammar:
+     bar   = deep navy, the neutral evidence color
+     blue  = electric blue, the pipeline's signal (market group, key stages)
+     cyan  = motive / secondary series
+     neg   = red, reserved for "needs attention" (severity, tails, review set)
+     pos   = quiet blue-gray for anything ordinary
+   No gradients, no glows, no rounded corners. Direct labels on every mark.
+
+   .dark stays AFTER :root -- equal specificity, source order decides. */
+
+:root {
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel2: #f5f7f9;
+  --line: #e4e7eb;
+  --rule: #051c2c;          /* the thin black exhibit rule */
+  --ink: #051c2c;
+  --muted: #5a6572;
+  --faint: #9aa4b0;
+
+  --bar: #051c2c;
+  --blue: #2251ff;
+  --cyan: #00a9f4;
+  --pos: #c9d5e4;
+  --neg: #d8383a;
+  --neg-mid: #ee8b8c;
+  --conf: #8f1e21;          /* deep maroon: ground truth (confirmed cases) -- a
+                               register darker than --neg's severity red */
+  --track: #eff2f5;
+  --sel: #eef3ff;
+
+  --display: "Inter Tight", "Helvetica Neue", Arial, sans-serif;
+  --sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+.dark {
+  --bg: #051c2c;
+  --panel: #051c2c;
+  --panel2: #0c2a40;
+  --line: #1c3a52;
+  --rule: #e8eef4;
+  --ink: #e8eef4;
+  --muted: #9fb0bf;
+  --faint: #5f7385;
+
+  --bar: #8faec9;
+  --blue: #5b7cff;
+  --cyan: #12a5b4;
+  --pos: #2e4b63;
+  --neg: #ff6e6c;
+  --neg-mid: #c24f4e;
+  --conf: #c8514f;
+  --track: #10314a;
+  --sel: #0e2c49;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

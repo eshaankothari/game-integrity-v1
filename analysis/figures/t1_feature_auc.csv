@@ -1,0 +1,13 @@
+group,feature,n,auc,ci_lo,ci_hi,p_perm,sig
+pre-game,closing under price,15498,0.5208,0.5118,0.53,<0.0005,yes
+pre-game,closing line level,15498,0.4838,0.4745,0.4928,<0.0005,yes
+pre-game,line movement,7990,0.4944,0.4827,0.5061,0.3605,no
+pre-game,price-only movement,4304,0.5089,0.4915,0.5265,0.2865,no
+pre-game,motive (1 - salary pct),15494,0.4952,0.4859,0.5041,0.3140,no
+pre-game,MARKET block,15498,0.5022,0.4931,0.5113,0.6305,no
+post-game (circular),game_z (negated),15461,0.9101,0.9058,0.9143,<0.0005,yes
+post-game (circular),effort_z (negated),15461,0.7045,0.6967,0.7126,<0.0005,yes
+post-game (circular),game_z_tier (negated),15498,0.8624,0.8571,0.8681,<0.0005,yes
+post-game (circular),effort_z_tier (negated),15498,0.6585,0.6497,0.6667,<0.0005,yes
+post-game (circular),shortfall_z,15498,1.0,1.0,1.0,<0.0005,yes
+post-game (circular),PERFORMANCE block,15498,0.9476,0.9444,0.9508,<0.0005,yes
