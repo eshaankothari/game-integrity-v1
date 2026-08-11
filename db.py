@@ -29,6 +29,54 @@ def connect(autocommit=False):
         yield conn
 
 
+# --- read path, backend-agnostic -------------------------------------------
+#
+# The WRITE path above is Postgres-only and stays that way: loaders, upserts and the
+# spend ledger all target the source of truth. Only READS need to work against the
+# DuckDB export, so only reads are abstracted here.
+#
+# DuckDB speaks a different parameter dialect, so the SQL the API already contains is
+# translated rather than rewritten -- %(name)s -> $name, %s -> ?. Doing it here means
+# app.py has one query helper and no idea which engine answered it.
+
+def _to_duck_sql(sql):
+    import re
+    return re.sub(r"%\(([a-zA-Z_][a-zA-Z0-9_]*)\)s", r"$\1", sql).replace("%s", "?")
+
+
+def rows(sql, params=None, one=False):
+    """Run a read query -> list of dicts (or one dict / None when `one`).
+
+    Works on either backend. Callers pass psycopg-style SQL and a dict (named) or
+    sequence (positional) of parameters, exactly as before.
+    """
+    if config.BACKEND == "duckdb":
+        import re
+
+        import duckdb
+        duck_sql = _to_duck_sql(sql)
+        # psycopg IGNORES dict keys the query does not use; DuckDB raises. The API
+        # builds one params dict and reuses it across a COUNT and a paged SELECT, so
+        # the count query legitimately never mentions limit/offset. Subsetting here
+        # keeps that pattern working rather than making every caller trim its own dict.
+        if isinstance(params, dict):
+            used = set(re.findall(r"\$([a-zA-Z_][a-zA-Z0-9_]*)", duck_sql))
+            params = {k: v for k, v in params.items() if k in used}
+        con = duckdb.connect(config.GI_DB, read_only=True)
+        try:
+            cur = con.execute(duck_sql, params or [])
+            cols = [d[0] for d in cur.description]
+            out = [dict(zip(cols, r)) for r in cur.fetchall()]
+        finally:
+            con.close()
+    else:
+        from psycopg.rows import dict_row
+        with connect() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params or ())
+            out = [dict(r) for r in cur.fetchall()]
+    return (out[0] if out else None) if one else out
+
+
 def upsert(conn, table, rows, conflict, update=None):
     """Bulk INSERT ... ON CONFLICT (conflict) DO UPDATE. Returns rows sent.
 

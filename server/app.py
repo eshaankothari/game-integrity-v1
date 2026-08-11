@@ -26,7 +26,6 @@ import sys
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from psycopg.rows import dict_row
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -120,12 +119,13 @@ SEASON = config.SEASON
 
 
 def q(sql, params=None, one=False):
-    """Run a query, return dicts with NaN/inf scrubbed to None."""
-    with db.connect() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(sql, params or ())
-            rows = cur.fetchall()
-    out = [{k: _fin(v) for k, v in r.items()} for r in rows]
+    """Run a query, return dicts with NaN/inf scrubbed to None.
+
+    db.rows() picks the backend: Postgres by default, the DuckDB export when GI_DB
+    points at one. The SQL below is written once, in psycopg dialect, either way.
+    """
+    out = db.rows(sql, params)
+    out = [{k: _fin(v) for k, v in r.items()} for r in out]
     return (out[0] if out else None) if one else out
 
 
@@ -213,10 +213,13 @@ def summary(review_threshold: float = Query(73.7, ge=0, le=100)):
     # 0-1: the score is not a probability and pinning the axis would clip both tails.
     lo, hi = agg["lo"], agg["hi"]
     width = (hi - lo) / 20 or 1
+    # Arithmetic rather than width_bucket(): DuckDB has no such function, and the
+    # expression below is what width_bucket computes anyway. least() pins the top edge,
+    # which would otherwise land the single highest score in a 21st bucket of its own.
     hist = q("""
-        SELECT width_bucket(score_100, %s, %s, 20) AS b, count(*) AS n
+        SELECT least(floor((score_100 - %s) / %s) + 1, 20) AS b, count(*) AS n
           FROM player_game_scores WHERE score_100 IS NOT NULL GROUP BY b ORDER BY b
-    """, (lo, hi))
+    """, (lo, width))
     counts = {r["b"]: r["n"] for r in hist}
     return {
         "scored": agg["scored"],
@@ -462,30 +465,28 @@ def case_line_history(player_id: int, game_id: str,
     rather than let the reader discover it by clicking.
     """
     book = book if book in BOOKS_LIVE else config.BOOK
-    with db.connect() as conn, conn.cursor(row_factory=dict_row) as cur:
-        cur.execute("""
-            SELECT q.book, count(*) n
-              FROM prop_quotes q JOIN odds_events e ON e.event_id = q.event_id
-             WHERE e.game_id = %(g)s AND q.player_id = %(p)s
-               AND q.market = %(m)s AND q.under_price IS NOT NULL
-             GROUP BY q.book""", {"g": game_id, "p": player_id, "m": config.MARKET})
-        avail = {r["book"]: r["n"] for r in cur.fetchall()}
-        cur.execute("""
-            SELECT DISTINCT ON (q.offset_from_tip_sec)
-                   q.offset_from_tip_sec AS sec,
-                   q.snapshot_role       AS role,
-                   q.line, q.over_price, q.under_price
-              FROM prop_quotes q
-              JOIN odds_events e ON e.event_id = q.event_id
-             WHERE e.game_id = %(g)s AND q.player_id = %(p)s
-               AND q.book = %(b)s AND q.market = %(m)s
-               AND q.under_price IS NOT NULL
-             -- DISTINCT ON keeps one row per instant. A book can quote alternate lines
-             -- on the same player at the same moment; take the one nearest the close so
-             -- the series follows the main market rather than hopping between ladders.
-             ORDER BY q.offset_from_tip_sec DESC, q.snapshot_role = 'close' DESC, q.line
-        """, {"g": game_id, "p": player_id, "b": config.BOOK, "m": config.MARKET})
-        rows = cur.fetchall()
+    avail = {r["book"]: r["n"] for r in db.rows("""
+        SELECT q.book, count(*) n
+          FROM prop_quotes q JOIN odds_events e ON e.event_id = q.event_id
+         WHERE e.game_id = %(g)s AND q.player_id = %(p)s
+           AND q.market = %(m)s AND q.under_price IS NOT NULL
+         GROUP BY q.book""", {"g": game_id, "p": player_id, "m": config.MARKET})}
+
+    rows = db.rows("""
+        SELECT DISTINCT ON (q.offset_from_tip_sec)
+               q.offset_from_tip_sec AS sec,
+               q.snapshot_role       AS role,
+               q.line, q.over_price, q.under_price
+          FROM prop_quotes q
+          JOIN odds_events e ON e.event_id = q.event_id
+         WHERE e.game_id = %(g)s AND q.player_id = %(p)s
+           AND q.book = %(b)s AND q.market = %(m)s
+           AND q.under_price IS NOT NULL
+         -- DISTINCT ON keeps one row per instant. A book can quote alternate lines
+         -- on the same player at the same moment; take the one nearest the close so
+         -- the series follows the main market rather than hopping between ladders.
+         ORDER BY q.offset_from_tip_sec DESC, q.snapshot_role = 'close' DESC, q.line
+    """, {"g": game_id, "p": player_id, "b": book, "m": config.MARKET})
 
     out = []
     for r in rows:
@@ -1042,9 +1043,14 @@ def players(limit: int = Query(70, le=400), min_games: int = 3):
         SELECT a.*, w.game_id, w.game_date, w.score_100 AS worst_score,
                w.rank AS worst_rank, w.points, w.close_line, w.minutes,
                w.in_shortlist AS worst_in_shortlist,
-               row_number() OVER (ORDER BY a.topk DESC) AS position
+               -- player_id breaks ties. 8 players share an exact topk value, and
+               -- without a tiebreaker their order is whatever the engine happens to
+               -- produce: Postgres and DuckDB disagreed, and Postgres alone is free
+               -- to change its mind after a re-plan. A leaderboard that reorders
+               -- between runs looks like the model changed when nothing did.
+               row_number() OVER (ORDER BY a.topk DESC, a.player_id) AS position
           FROM agg a JOIN worst w USING (player_id)
-         ORDER BY a.topk DESC
+         ORDER BY a.topk DESC, a.player_id
     """, {"k": TOP_K, "min_games": min_games})
 
     for r in rows:

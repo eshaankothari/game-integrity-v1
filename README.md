@@ -24,40 +24,60 @@ below is pinned by the dependency files — those install *libraries*, not runti
 | **Node** | 20+ (built on 24) | dashboard build |
 | **PostgreSQL** | 14+ (built on 18) | the database |
 
-Two dependency files, one per language — `requirements.txt` is **pip only** and does not
-install anything for the frontend:
+Dependencies are declared per language — `requirements.txt` is **pip only** and installs
+nothing for the frontend — but you never have to run the two separately:
 
-| file | installs | with |
-|---|---|---|
-| `requirements.txt` | Python packages | `pip install -r requirements.txt` |
-| `frontend/package.json` + `package-lock.json` | Node packages | `npm ci` |
+| file | installs |
+|---|---|
+| `requirements.txt` | Python packages |
+| `frontend/package.json` + `package-lock.json` | Node packages |
 
 ## Quick start
 
-The database ships with the project already scored. **You do not need API keys to run the
-dashboard** — keys are only for re-running ingest, which is already done.
+Every command lives in the `Makefile`. Run `make` on its own to see them all.
 
 ```bash
-cp .env.example .env          # fill in only if you plan to re-run ingest
-
-# 1. restore the database
-createdb game_integrity_v1
-pg_restore -d game_integrity_v1 game_integrity.dump
-
-# 2. API  (terminal 1)
-pip install -r requirements.txt
-uvicorn server.app:app --port 8000
-
-# 3. dashboard  (terminal 2)
-cd frontend && npm ci && npm run dev       # -> http://localhost:5173
+make setup      # pip install + npm ci, both languages
+make demo       # API on :8000 and dashboard on :5173, together
 ```
 
-`npm ci` installs exactly what is in the lockfile — use it rather than `npm install`, which
-is free to resolve newer versions. The dev server proxies `/api` to port 8000, so both must
-be running.
+Then open **http://localhost:5173**.
 
-**Check it worked:** the landing page should report **15,494 player-games**, and
-`curl localhost:8000/api/summary` should return `"shortlist": 3207`.
+**You do not need API keys.** The database ships already scored; keys are only for
+re-running ingest, which is already done. `cp .env.example .env` if you plan to.
+
+| command | does |
+|---|---|
+| `make setup` | install everything |
+| `make demo` | run API + dashboard together |
+| `make api` / `make ui` | run one of them alone |
+| `make check` | confirm the database is present and scored |
+| `make duckdb` | export Postgres to a single-file database |
+
+**Check it worked:** `make check` prints `shortlist: 3207`, and the landing page reports
+**15,494 player-games**.
+
+## Two database options
+
+The API reads either backend — same code, same responses, verified endpoint by endpoint.
+
+**DuckDB (default for a handoff).** A single file, already in this repo. No server, no
+restore, no version matching:
+
+```bash
+GI_DB=game_integrity.duckdb make demo
+```
+
+**Postgres (the source of truth).** Every loader writes here, and the full history —
+including the spend ledger and the rejected residual models — lives here. Used whenever
+`GI_DB` is unset:
+
+```bash
+createdb game_integrity_v1 && pg_restore -d game_integrity_v1 game_integrity.dump
+make demo
+```
+
+`make duckdb` regenerates the DuckDB file from Postgres in about a second.
 
 ---
 

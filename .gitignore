@@ -41,3 +41,8 @@ experiments/
 
 # vite dependency pre-bundle cache (regenerated on every dev start)
 frontend/.vite/
+
+# game_integrity.duckdb is deliberately COMMITTED, not ignored. It is a build
+# artifact, but it is also the whole point of the handoff: 21MB means a recipient
+# clones and runs, with no database server to install or dump to restore.
+# Regenerate from Postgres with `make duckdb`.

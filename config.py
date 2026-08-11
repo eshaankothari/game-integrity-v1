@@ -91,3 +91,13 @@ BOOK = "fanduel"                                           # ...and prefer this 
 
 # --- database ---
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql:///game_integrity_v1")
+
+# TWO BACKENDS, POSTGRES BY DEFAULT.
+#
+# Postgres is the source of truth: every loader writes to it and the full 21-table
+# history lives there. DuckDB is a read-only EXPORT of the scored tables (see
+# to_duckdb.py) so the dashboard can be handed to someone without a database server.
+#
+# Setting GI_DB to a .duckdb path switches the API over. Unset, nothing changes.
+GI_DB = os.environ.get("GI_DB")
+BACKEND = "duckdb" if (GI_DB or "").endswith(".duckdb") else "postgres"
