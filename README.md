@@ -15,14 +15,17 @@ once. Full statistical reasoning lives in [METHODOLOGY.md](METHODOLOGY.md).
 
 ## Prerequisites
 
-Three runtimes, installed however your machine prefers (`brew`, `apt`, installer). Nothing
-below is pinned by the dependency files — those install *libraries*, not runtimes.
+Installed however your machine prefers (`brew`, `apt`, installer). Nothing below is pinned
+by the dependency files — those install *libraries*, not runtimes.
 
 | | version | needed for |
 |---|---|---|
 | **Python** | 3.11+ (built on 3.13) | pipeline and API |
 | **Node** | 20+ (built on 24) | dashboard build |
-| **PostgreSQL** | 14+ (built on 18) | the database |
+| PostgreSQL | 14+ (built on 18) | **optional** — only to re-run the pipeline |
+
+**You do not need PostgreSQL to run the demo.** The repo ships a DuckDB file that needs no
+server; see "Two database options" below.
 
 Dependencies are declared per language — `requirements.txt` is **pip only** and installs
 nothing for the frontend — but you never have to run the two separately:
@@ -52,7 +55,9 @@ The database ships already scored; keys are only for re-running ingest, which is
 | `make demo` | run API + dashboard together (prefix with `GI_DB=game_integrity.duckdb`) |
 | `make api` / `make ui` | run one of them alone |
 | `make check` | confirm the database is present and scored |
-| `make duckdb` | export Postgres to a single-file database |
+| `make restore` | load `game_integrity.dump` into a Postgres database |
+| `make dump` | export Postgres → `game_integrity.dump` (all 22 tables) |
+| `make duckdb` | export Postgres → `game_integrity.duckdb` (dashboard tables) |
 
 **Check it worked:** `GI_DB=game_integrity.duckdb make check` prints `shortlist: 3207`,
 and the landing page reports **15,494 player-games**.
