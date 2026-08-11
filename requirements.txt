@@ -1,0 +1,25 @@
+# Everything the project needs, grouped by what it is for.
+#   pip install -r requirements.txt
+#
+# Versions are lower bounds, not pins: these are the versions this was built and
+# verified against, and nothing here depends on a pre-release API.
+
+# --- dashboard (L7 + frontend) -------------------------------------------
+# The minimum to serve the API and run the demo. Needs no API keys.
+fastapi>=0.115
+uvicorn[standard]>=0.32
+psycopg[binary]>=3.3
+pandas>=2.2
+numpy>=2.1
+
+# --- pipeline (L0-L6) -----------------------------------------------------
+# Only needed to RE-RUN ingest and scoring. The shipped database already
+# contains the results.
+requests>=2.32          # OddsAPI + basketball-reference
+nba_api>=1.11           # box scores, play-by-play, rosters
+scikit-learn>=1.5       # residualize.py (L5c, rejected but still imported)
+
+# --- analysis (tests/analysis) -------------------------------------------
+# Regenerates every figure and number in the write-up from the database.
+matplotlib>=3.9
+scipy>=1.14

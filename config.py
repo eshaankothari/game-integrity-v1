@@ -1,6 +1,6 @@
 """Foundation config for game-integrity v1.
 
-SUMMARY: This file imports all previous caches, environment variables, and sets up the global
+SUMMARY: This file imports all previous caches (from Eshaan's V0 - disregard), environment variables, and sets up the global
 variables.
 
 Standalone project: all logic is COPIED in (no imports from the v0 repo). We only

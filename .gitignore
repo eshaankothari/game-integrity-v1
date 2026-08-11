@@ -38,3 +38,6 @@ experiments/
 # never commit real credentials -- .env.example documents the shape instead
 .env.*
 !.env.example
+
+# vite dependency pre-bundle cache (regenerated on every dev start)
+frontend/.vite/
