@@ -48,6 +48,9 @@ KEEP = [
     "odds_events",
     "prop_quotes",             # includes the 'poll' curve rows the case chart draws
     "player_game_pbp",         # stints, ejections, garbage time
+    # L4c. The shot chart and play timeline read this instead of the pbp cache, so
+    # both panels work wherever the database goes -- which is the whole point.
+    "player_game_events",
     "game_pbp_context",
     "game_context",            # rest, altitude, pace, margin
     "player_game_review",      # L9 output, empty unless the reviewer has been run

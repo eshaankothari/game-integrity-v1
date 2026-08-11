@@ -415,28 +415,30 @@ def _clock(v) -> str:
 
 @app.get("/api/case/{player_id}/{game_id}/shots")
 def case_shots(player_id: int, game_id: str):
-    import cache
-    df = cache.read_cached("nba", cache.nba_key("pbp", game_id), fmt="csv")
-    if df is None:
-        return {"shots": [], "source": "pbp not cached for this game"}
-    rows = df[(df["personId"] == player_id) & (df["isFieldGoal"] == 1)]
-    shots = []
-    for _, e in rows.iterrows():
-        x, y = _fin(e.get("xLegacy")), _fin(e.get("yLegacy"))
-        if x is None or y is None:
-            continue
-        shots.append({
-            "action_number": int(e["actionNumber"]),
-            "period": int(e["period"]),
-            "clock": _clock(e.get("clock")),
-            "x": x, "y": y,
-            "distance": _fin(e.get("shotDistance")),
-            "made": str(e.get("shotResult")) == "Made",
-            "value": _fin(e.get("shotValue")),
-            "description": str(e.get("description") or ""),
-            "video": _fin(e.get("videoAvailable")) == 1,
-        })
-    return {"shots": shots, "source": "cached play-by-play"}
+    """Field-goal attempts with court coordinates -> the shot chart.
+
+    Reads `player_game_events` (L4c), not the pbp cache. The cache is 117MB of paid
+    responses that deliberately does not ship, so a filesystem read here left this
+    panel empty for everyone except the machine that ran the ingest.
+    """
+    rows = db.rows("""
+        SELECT action_number, period, clock, x_legacy, y_legacy, shot_distance,
+               shot_result, shot_value, description, video_available
+          FROM player_game_events
+         WHERE player_id = %(p)s AND game_id = %(g)s AND is_field_goal
+           AND x_legacy IS NOT NULL AND y_legacy IS NOT NULL
+         ORDER BY action_number""", {"p": player_id, "g": game_id})
+    return {"shots": [{
+        "action_number": int(e["action_number"]),
+        "period": int(e["period"]),
+        "clock": _clock(e["clock"]),
+        "x": _fin(e["x_legacy"]), "y": _fin(e["y_legacy"]),
+        "distance": _fin(e["shot_distance"]),
+        "made": e["shot_result"] == "Made",
+        "value": _fin(e["shot_value"]),
+        "description": e["description"] or "",
+        "video": bool(e["video_available"]),
+    } for e in rows], "source": "play-by-play"}
 
 
 # Books we actually hold quotes for, plus the two prediction markets the UI offers
@@ -512,28 +514,33 @@ def case_line_history(player_id: int, game_id: str,
 def case_plays(player_id: int, game_id: str):
     """Every pbp event attributed to the player, in game order -- the case
     view's timeline beside the shot chart. `made` is tri-state: True/False for
-    shots (FGs and FTs), None for everything else (subs, fouls, rebounds...)."""
-    import cache
-    df = cache.read_cached("nba", cache.nba_key("pbp", game_id), fmt="csv")
-    if df is None:
-        return {"plays": [], "source": "pbp not cached for this game"}
-    rows = df[df["personId"] == player_id].sort_values("actionNumber")
+    shots (FGs and FTs), None for everything else (subs, fouls, rebounds...).
+
+    Reads `player_game_events` (L4c) rather than the pbp cache, for the same reason
+    as the shot chart: the cache does not ship, the database does.
+    """
+    rows = db.rows("""
+        SELECT action_number, period, clock, description, action_type,
+               shot_result, video_available, score_away, score_home
+          FROM player_game_events
+         WHERE player_id = %(p)s AND game_id = %(g)s
+         ORDER BY action_number""", {"p": player_id, "g": game_id})
     plays = []
-    for _, e in rows.iterrows():
-        shot_result = str(e.get("shotResult") or "")
-        away, home = _fin(e.get("scoreAway")), _fin(e.get("scoreHome"))
+    for e in rows:
+        away, home = _fin(e["score_away"]), _fin(e["score_home"])
+        sr = e["shot_result"]
         plays.append({
-            "action_number": int(e["actionNumber"]),
+            "action_number": int(e["action_number"]),
             "period": int(e["period"]),
-            "clock": _clock(e.get("clock")),
-            "description": str(e.get("description") or ""),
-            "action_type": str(e.get("actionType") or ""),
-            "made": (shot_result == "Made") if shot_result in ("Made", "Missed") else None,
-            "video": _fin(e.get("videoAvailable")) == 1,
-            "score": (f"{int(away)}–{int(home)}"
+            "clock": _clock(e["clock"]),
+            "description": e["description"] or "",
+            "action_type": e["action_type"] or "",
+            "made": (sr == "Made") if sr in ("Made", "Missed") else None,
+            "video": bool(e["video_available"]),
+            "score": (f"{int(away)}\u2013{int(home)}"
                       if away is not None and home is not None else None),
         })
-    return {"plays": plays, "source": "cached play-by-play"}
+    return {"plays": plays, "source": "play-by-play"}
 
 
 @app.get("/api/video/{game_id}/{event_id}")

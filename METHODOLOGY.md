@@ -64,56 +64,63 @@ have produced confident nonsense:
 ## 2. The score
 
 ```
-score_100 = 0.45 · performance_100  +  0.30 · market_100  +  0.25 · motive_100
+score      = 0.45 · performance  +  0.30 · market  +  0.25 · motive     (raw z-scale)
+score_100  = linear rescale of score onto 0–100 over all propped games
 ```
 
-**Every block is converted to a 0–100 percentile before it is combined**, so the score is
-0–100 and reads as "worse than X% of propped games".
+**The blocks are combined on the RAW z-scale.** `score_100` is a min–max rescale applied
+afterwards, for display only. It is *not* a percentile: 73.7 does not mean "worse than
+73.7% of games". The rescale is strictly monotone, so it changes how a number reads and
+never which games surface.
 
-That is not cosmetic. Combining the raw z-blocks silently rescaled the weights, because a
-weight only means what it says when the things it weights have the same spread — and they
-did not:
+### The stated weights are not the effective weights
+
+A weight only means what it says when the things it weights have the same spread, and
+these do not:
 
 | block | sd | stated weight | **effective share** |
 |---|---:|---:|---:|
-| performance | 0.677 | 0.45 | 40.9% |
-| market | 0.636 | 0.30 | 25.6% |
-| motive | 1.000 | 0.25 | **33.5%** |
+| performance | 0.718 | 0.45 | **42.3%** |
+| market | 0.636 | 0.30 | **25.0%** |
+| motive | 1.000 | 0.25 | **32.7%** |
 
-`motive` is a z-score by construction, so its sd is exactly 1; the other two are *means*
-of z-scores, which shrinks their spread. So motive was running at a third of the score
-rather than the quarter it was held to — and holding it to a quarter was the entire reason
-for the number, so the score could not become a salary sort. A percentile is uniform, so
-all three now have identical spread (sd 28.87) and the effective shares are **45.0 / 30.0
-/ 25.0 exactly**.
+`motive` is a z-score by construction, so its sd is exactly 1; the other two are *means* of
+z-scores, which shrinks their spread. **Motive therefore acts at roughly a third of the
+score rather than the quarter it is nominally held to** — and holding it to a quarter was
+the entire point of the number, so that the score could not become a salary sort.
 
-Cost, measured: the ranking moves. Spearman **0.9753** against the old ordering, 84 of the
-top 100 retained, median rank change 571 of 15,494, and the flagged games go from a
-geometric-mean rank of 581 to **592** — slightly worse, which is what accepting a
-correction that happens not to flatter your labels looks like.
+This is a known, unfixed discrepancy, stated here rather than quietly corrected. Converting
+each block to a percentile before combining would make the shares exactly 45/30/25; it was
+tested and **not adopted**, because a percentile is uniform over the population and
+therefore flattest exactly at the tail anyone reads — across the top 200 it spanned 1.28
+points, so rank 1 printed 100.00 and rank 10 printed 99.94. The linear rescale preserves
+the raw score's spacing, and spacing is what a reviewer reads.
 
-The raw z-scale `score` is kept alongside. A percentile is defined against a population,
-so every 0–100 number shifts if a season is added; `score` does not, and is the number to
-compare across runs.
+The raw `score` is kept alongside and is the number to compare across runs: the rescale's
+endpoints are set by the two most extreme games, so every 0–100 value shifts if a season is
+added.
 
-Three blocks, deliberately kept separate. `performance` and `market` correlate at
-**+0.102** — they carry genuinely different information, and collapsing them early would
-destroy the ability to ask "did *both* point the same way", which is the interesting
-question.
+Three blocks, deliberately kept separate. `performance` and `market` correlate at just
+**+0.072**, and `performance` with `motive` at **−0.014** — they carry genuinely different
+information, and collapsing them early would destroy the ability to ask "did *both* point
+the same way", which is the interesting question.
 
 Blocks are **averaged, not multiplied**. Multiplying correlated inputs inflates apparent
 rarity roughly tenfold on this data, and a product collapses to zero whenever any block
 is missing.
 
-### 2.1 `performance` — five components, equal weight
+### 2.1 `performance` — three components, equal weight
 
 | component | baseline | what it asks |
 |---|---|---|
 | `game_z` | his own season | was this unlike **him**? |
 | `effort_z` | his own season | was he less involved than **he** usually is? |
-| `game_z_tier` | everyone in his role | was this bad for a player in his **role**? |
-| `effort_z_tier` | everyone in his role | was he less involved than his **role** implies? |
 | `shortfall_z` | league-wide | how far short of the **market's forecast** did he fall? |
+
+`game_z_tier` and `effort_z_tier` — the same quantities standardised against everyone in
+the player's role rather than against himself — are still computed and stored on
+`player_game_z`, but carry **zero weight**. See "Why two baselines" below for why they were
+adopted and then withdrawn.
 
 `game_z` standardises **Hollinger Game Score**:
 
@@ -137,17 +144,24 @@ They fail in **opposite directions**, so both get a vote:
   cameos, so Porter 2024-01-20 reads `game_z` −0.17 own but **+0.27** tier — "above
   average for a bench player", which is true and useless.
 
-Six ways of combining them were tested. Adding both as extra components was the **only**
-one that improved the Beasley games without paying for it with the Porter games:
+Six ways of combining them were tested, and adding both as extra components was **adopted
+on a bad measurement and then reverted**. This is worth recording in full, because the
+error is the kind that flatters a result:
 
-| blend | Beasley 4 | Porter 2 |
-|---|---:|---:|
-| own only | 868 | 468 |
-| **own + tier both** | **654** (−24.7%) | **457** (−2.3%) |
-| tier only | 539 (−37.9%) | 595 (+27.2%) |
+The supporting per-player split indexed a **sorted** rank list as though it were game
+order. It reported Beasley −24.7% and Porter −2.3%, i.e. a clear gain for one player at
+almost no cost to the other. Recomputed correctly, the same blend moved Porter's 2024‑03‑20
+game from rank **90 to 176 — 46.8% worse**, while Beasley improved 38.6%. The blend was not
+a free gain; it was a transfer from the player with two labels to the player with four.
 
-Tier-only scores best overall and is **rejected**: its gain is reweighting toward the
-player who supplies four of six labels, not more signal.
+`PERF_W` is back to three equal components. The tier columns remain in the table for
+inspection, and the role `tier` itself is still used — for the "as a bench player he
+averages…" baselines shown on the case page, and by the tier trims. Neither feeds the
+score.
+
+Tier-only was separately tested and also **rejected**, for the same underlying reason: it
+scores best overall on the labels, but its gain is reweighting toward the player who
+supplies four of six of them, not more signal.
 
 #### Why `shortfall` exists — the floor effect
 
@@ -221,12 +235,12 @@ population the axis exists to surface. Jontay Porter is one of these rows.
 
 ### 2.4 Weights
 
-**Within-block weights are `1/n`** — not humility, a measurement. `analysis/weight_audit.py`:
+**Within-block weights are `1/n`** — not humility, a measurement. `tests/experiments/weight_audit.py`:
 
 - **One-at-a-time.** Setting each weight to 0 and to 2×, the cost (mean log₁₀ rank of the
   six flagged games) moved **0.02 – 0.09** for every within-block weight, against **0.58**
   for the motive block weight. Zeroing `shortfall_z` entirely cost 0.027.
-- **Random ensemble.** Over 20,000 Dirichlet draws, **48.1% of random weight vectors beat
+- **Random ensemble.** Over 20,000 Dirichlet draws, **34.3% of random block-weight vectors beat
   the previously tuned ones**, whose geometric-mean flagged rank (858) sat almost exactly
   on the random median (897).
 - **The fits themselves.** Held-out AUC was 0.661 and 0.600 against a 0.50 baseline, and
@@ -242,7 +256,7 @@ nothing, because "cheap" is what the two label players have in common.
 
 ## 3. The funnel
 
-Applied **before** ranking. Six cuts, 15,498 → **4,810**.
+Applied **before** ranking. Seven cuts, 15,498 → **3,207**.
 
 ```
 start                                        15,498
@@ -252,7 +266,19 @@ start                                        15,498
 4  no upward line move        (NaN kept)      6,936   (−410)
 5  no upward price-only move  (NaN kept)      6,033   (−903)
 6  salary <= $20M or unlisted                 4,810   (−1,223)
+7  experience > 2 seasons     (NaN kept)      3,207   (−1,603)
 ```
+
+**Cut 7 removes players in their first three seasons.** It is written
+`~(experience <= 2)` rather than `experience > 2`, so the **12 propped players the roster
+endpoint returned no experience for are kept**. That branch is load-bearing rather than
+defensive: Jontay Porter is one of the twelve, and the written form would delete a labelled
+case. He survives on a missing value, not on merit — 2023‑24 was effectively his first NBA
+season, so backfilling `experience` would make this cut remove him.
+
+Measured like the others: **0 order inversions**, and the shortlist's top 500 goes from
+100% under-hits to 99.6% with average points 1.66 → 2.13 — the top 500 now reaches deeper
+into a smaller pool. That is the trade, stated rather than buried.
 
 ### Why trims, not half-plane gates
 
@@ -363,12 +389,16 @@ and independence are in direct conflict. Only `contested_shots` passes both.
 ## 7. Where the code lives
 
 ```
+load_pbp_events.py     L4c  -> player_game_events      one row per pbp event, so the
+                            shot chart and timeline need no cache file at request time
 standardize.py         L5   -> player_game_features   raw: box score, lines, movement
                             -> player_game_z          standardised: components + blocks
 export_candidates.py   L6   -> player_game_scores     the frontend table
                             -> out/candidates.csv     the same shortlist, as a file
 server/app.py          L7   read-only FastAPI over those three tables
-experiments/                everything else, verdicts in experiments/README.md
+tests/experiments/          everything else, verdicts in tests/experiments/README.md
+tests/analysis/             figures.py and exploratory.py regenerate every number
+                            and figure in the write-up from the database
 ```
 
 L7 queries Postgres only — no CSV reads, so the dashboard can never serve a stale run —
@@ -380,7 +410,7 @@ wrong only if the ingest was wrong; a z is wrong if the *baseline population* ch
 which happens every time a game is added. Keeping them apart means re-standardising never
 rewrites the evidence it was computed from.
 
-`player_game_scores` carries **all 15,498 propped games**, not just the 4,810 survivors.
+`player_game_scores` carries **all 15,498 propped games**, not just the 3,207 survivors.
 `rank` is NULL for eliminated rows — they have no position in the shortlist, which is
 different from being last in it — and `cut_failed` records the first cut that removed
 them, so the UI can answer "why isn't this game here?" from the same query:
@@ -395,16 +425,17 @@ SELECT rank, player, game_date, points, close_line, shortfall,
 
 ```
 cut_failed breakdown            n
-(passed all)                 4,810
+(passed all)                 3,207
 1  game_z   top 25%          3,903
 3  market   bottom 25%       2,314
 2  effort_z top 25%          1,935
+7  experience > 2 seasons    1,603
 6  salary <= $20M            1,223
 5  no upward price-only move   903
 4  no upward line move         410
 ```
 
-L5 owns the weights. `experiments/weight_audit.py` reads them out of `standardize.py` by
+L5 owns the weights. `tests/experiments/weight_audit.py` reads them out of `standardize.py` by
 AST rather than copying them, so the audit cannot silently disagree with the pipeline it
 is auditing.
 

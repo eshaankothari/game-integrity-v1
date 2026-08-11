@@ -132,6 +132,7 @@ Each layer reads what the layer above it wrote. Nothing skips ahead, and every l
 |---|---|---|
 | `load_boxscores.py` | `player_games` | Merges four NBA box-score endpoints (traditional, advanced, hustle, tracking) into one row per player-game. |
 | `load_pbp.py` | `player_game_pbp`, `game_pbp_context` | Play-by-play: substitution stints, ejections, garbage-time split. Two commands — `fetch` (slow, network) and `derive` (fast, offline). |
+| `load_pbp_events.py` | `player_game_events` | The individual pbp events for every propped player-game — 422,884 rows — so the shot chart and play timeline read the **database** rather than a cache file. Cache only, 0 API calls. |
 | `load_context.py` | `game_context` | Rest days, back-to-backs, altitude, pace, final margin — the circumstances that legitimately depress production. No API calls. |
 | **`standardize.py`** | `player_game_features`, `player_game_z` | **The scoring model.** Turns a player-game into the three blocks below. |
 
@@ -216,8 +217,10 @@ Split by *what they mean*, so re-standardising never rewrites the evidence it ca
 - **Missing ≠ failed.** Cuts use `~(x > 0)` rather than `x <= 0`, so a row with nothing to
   test survives instead of being deleted. Two-way contracts have no published salary, and
   they are exactly the population the motive axis exists to find.
-- **Caches are not in this repo.** They are large and already paid for. Without them the
-  loaders would re-fetch; the database already contains the results either way.
+- **Caches are not in this repo, and nothing at runtime needs them.** They are large and
+  already paid for. Without them the *loaders* would re-fetch, but the API reads only the
+  database — including the shot chart and play timeline, which used to open a cache file
+  inside the request and so rendered empty for anyone but the machine that ran the ingest.
 
 ## Known limitations
 
