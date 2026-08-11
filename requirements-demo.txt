@@ -1,0 +1,16 @@
+# Everything needed to RUN the demo. Five packages, no Node, no build step.
+#
+#   pip install -r requirements-demo.txt
+#   make serve            ->  http://localhost:8000
+#
+# The dashboard is served from frontend/dist, which is committed, and the data
+# comes from game_integrity.duckdb, which is also committed. Nothing to build,
+# no database server, no API keys.
+#
+# Use requirements.txt instead if you want to re-run the pipeline or the analysis.
+
+fastapi>=0.115
+uvicorn[standard]>=0.32
+duckdb>=1.1              # reads the shipped game_integrity.duckdb
+pandas>=2.2              # packet.py / summarize.py build the case narrative
+numpy>=2.1               # standardize.py is imported for the weights

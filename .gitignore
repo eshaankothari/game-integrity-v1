@@ -24,7 +24,9 @@ out/
 
 # frontend
 frontend/node_modules/
-frontend/dist/
+# frontend/dist IS committed: it is what lets the dashboard run with only Python
+# installed -- no Node, no npm ci, no build step. Rebuild with `make build`.
+#frontend/dist/
 
 # editor backups
 *.bak
