@@ -73,12 +73,28 @@ GI_DB=game_integrity.duckdb make demo
 currently load to postgres making it the source of truth and the duckdb a static snapshot
 of the postgres, especially when `GI_DB` is unset (meaning postgres by default)
 
+`game_integrity.dump` ships with the repo — 17 MB, **all 22 tables with their constraints
+and indexes**, including the four the DuckDB export leaves out (the spend ledger and the
+rejected L5c models).
+
 ```bash
-createdb game_integrity_v1 && pg_restore -d game_integrity_v1 game_integrity.dump
-make demo
+make restore        # createdb + pg_restore, ~30s
+make demo           # GI_DB unset, so this is Postgres
 ```
 
-`make duckdb` regenerates the DuckDB file from Postgres in about a second.
+Restore under another name with `PGDB=your_name make restore`, or point at a server you
+already have with `DATABASE_URL=postgresql:///your_db make demo`.
+
+| | `game_integrity.duckdb` | `game_integrity.dump` |
+|---|---|---|
+| size | 33 MB | 17 MB |
+| needs a server | no | yes |
+| tables | 17 — what the dashboard reads | **22 — everything** |
+| constraints / indexes | lookup indexes only | **150 constraints, 44 indexes** |
+| can re-run the pipeline | no | **yes** |
+
+Both are regenerated from a live Postgres: `make dump` and `make duckdb`, a second or two
+each.
 
 ---
 

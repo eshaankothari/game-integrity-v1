@@ -6,10 +6,11 @@
 # Run `make` on its own to list the targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-py setup-ui api ui demo duckdb postgres check clean
+.PHONY: help setup setup-py setup-ui api ui demo duckdb dump restore check clean
 
-PY  ?= python3
-DB  ?= game_integrity.duckdb
+PY   ?= python3
+DB   ?= game_integrity.duckdb
+PGDB ?= game_integrity_v1
 
 help:  ## show this list
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -51,8 +52,14 @@ demo:  ## API + dashboard together; Ctrl-C stops both
 duckdb:  ## export Postgres -> a single .duckdb file for handoff
 	$(PY) to_duckdb.py run
 
-postgres:  ## load the shipped .duckdb file into a Postgres server
-	$(PY) to_postgres.py run
+dump:  ## export Postgres -> game_integrity.dump (all 21 tables + constraints)
+	pg_dump $(PGDB) -Fc -f game_integrity.dump
+	@ls -lh game_integrity.dump | awk '{print "  wrote game_integrity.dump", $$5}'
+
+restore:  ## load game_integrity.dump into a fresh Postgres database
+	createdb $(PGDB) || true
+	pg_restore -d $(PGDB) --no-owner --no-privileges game_integrity.dump
+	@echo "  restored -> $(PGDB).  Run: make demo"
 
 check:  ## confirm the database is present and scored
 	@$(PY) -c "import config, db; \
