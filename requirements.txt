@@ -8,9 +8,14 @@
 # The minimum to serve the API and run the demo. Needs no API keys.
 fastapi>=0.115
 uvicorn[standard]>=0.32
-psycopg[binary]>=3.3
 pandas>=2.2
 numpy>=2.1
+
+# Both database drivers. duckdb reads the single-file export that ships with the
+# repo -- the no-Postgres path -- and psycopg reaches a Postgres server when
+# GI_DB is unset. Installing both means neither route needs a second command.
+duckdb>=1.1
+psycopg[binary]>=3.3
 
 # --- pipeline (L0-L6) -----------------------------------------------------
 # Only needed to RE-RUN ingest and scoring. The shipped database already
