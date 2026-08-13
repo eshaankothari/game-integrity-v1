@@ -115,15 +115,6 @@ function takeaway(c: CaseDetail) {
       : mk <= 25 ? "over"
       : "neither way";
 
-  // Career instability earns a sentence only when the rate is genuinely high:
-  // 0.5 is a team change or gap season every other season of his span. Null
-  // (older backend, no career row) renders nothing -- missing history is
-  // absence, not evidence.
-  const churn =
-    c.instability_career != null && c.instability_career >= 0.5
-      ? c.instability_career
-      : null;
-
   return (
     <>
       He scored <Hl n={0}><b>{c.points}</b> points</Hl> against {art}{" "}
@@ -133,13 +124,6 @@ function takeaway(c: CaseDetail) {
         <span>
           {" "}The market had leaned{" "}
           <Hl n={n + 1} tone={lean.includes("under") ? "under" : undefined}>{lean}</Hl> before tip.
-        </span>
-      )}
-      {churn != null && (
-        <span>
-          {" "}His career has been unstable —{" "}
-          <Hl n={n + (lean ? 2 : 1)}>{churn.toFixed(2)} team changes and gap seasons</Hl>{" "}
-          per season of his span.
         </span>
       )}
     </>
@@ -412,15 +396,17 @@ function SeasonStrip({ log, flaggedDate }: { log: SeasonGame[]; flaggedDate: str
   );
 }
 
-// ---- career team-movement strip ------------------------------------------
+// ---- career team-movement timeline ---------------------------------------
 // The motive exhibit's PICTURE: instability_career is a rate, this is what it
-// counted. One cell per league season of the career span, first season to the
-// scored one. A played season prints its team code on a quiet tile; two codes
-// in one cell are a mid-season move; a change of team from the previous stint
-// carries a cyan tick on its left edge -- the motive color, because those
-// boundaries are exactly what the rate counts. Gap seasons render hollow and
-// dashed ("no NBA team" in the tooltip), deliberately unlike both a played
-// tile and an empty state. Fetched per player like the shot chart fetches per
+// counted -- one continuous baseline with a slim rounded pill per league
+// season sitting ON it, first season to the scored one. The team code sits
+// INSIDE its pill (labels beside a bare dot proved harder to read), on the
+// quietest fill token rather than a heavy tile; a mid-season trade splits the
+// season's pill into half-pills with a surface gap; a change of team from the
+// previous stint carries a small cyan inset tick -- the motive color, because
+// those boundaries are exactly what the rate counts. A gap season is an
+// EMPTY dashed-outline pill ("no NBA team" in the tooltip), so absence can
+// never read as data. Fetched per player like the shot chart fetches per
 // game; a 404 -- older backend, or no recorded history -- rejects and renders
 // NOTHING (invariant 1: missing history is absence, never a calm-looking
 // single-team career).
@@ -450,45 +436,67 @@ function CareerStrip({ playerId }: { playerId: number }) {
   ).length;
   const gaps = span.length - bySeason.size;
 
+  // Merge the per-season stints into TENURE SEGMENTS: consecutive seasons on
+  // the same team become one bar whose width is proportional to how long he
+  // stayed (a trade season splits its weight between the two teams). The
+  // shape of a career then reads at a glance -- one long bar is a franchise
+  // player, a chain of short ones is the journeyman the instability rate is
+  // scoring. Consecutive gap years merge into one dashed segment the same way.
+  type Seg = { team: string | null; from: string; to: string; weight: number; moved: boolean };
+  const segs: Seg[] = [];
   let prevTeam: string | null = null;
+  for (const season of span) {
+    const teams: (string | null)[] = bySeason.get(season) ?? [null];
+    const w = 1 / teams.length;
+    for (const t of teams) {
+      const last = segs[segs.length - 1];
+      if (last && last.team === t) {
+        last.to = season;
+        last.weight += w;
+      } else {
+        segs.push({
+          team: t, from: season, to: season, weight: w,
+          // the cyan tick = exactly what the rate counts: a change of team
+          // from the previous stint (a gap between them does not reset it)
+          moved: t != null && prevTeam != null && t !== prevTeam,
+        });
+      }
+      if (t != null) prevTeam = t;
+    }
+  }
+
   return (
     <>
-      <div className="career-strip" role="img"
-           aria-label={`Career team history: ${span
-             .map((s) => `${s} ${(bySeason.get(s) ?? ["no NBA team"]).join(" then ")}`)
-             .join(", ")}`}>
-        {span.map((season) => {
-          const teams = bySeason.get(season);
-          // year labels shrink to just the opening year when the span is long
-          const yr = span.length > 9 ? `’${season.slice(2, 4)}` : season.slice(2);
-          return (
-            <div key={season} className="cs-cell"
-                 title={`${season} · ${teams ? teams.join(" → ") : "no NBA team"}`}>
-              <div className="cs-teams">
-                {teams ? (
-                  teams.map((t, i) => {
-                    const moved = prevTeam != null && t !== prevTeam;
-                    prevTeam = t;
-                    return (
-                      <span key={i} className={`cs-team${moved ? " cs-move" : ""}`}>
-                        {t}
-                      </span>
-                    );
-                  })
-                ) : (
-                  <span className="cs-team cs-none">—</span>
-                )}
+      <div className="career-scroll">
+        <div className="career-strip" role="img"
+             aria-label={`Career team history: ${span
+               .map((s) => `${s} ${(bySeason.get(s) ?? ["no NBA team"]).join(" then ")}`)
+               .join(", ")}`}>
+          {segs.map((seg, i) => {
+            const one = seg.from === seg.to;
+            const label = one ? seg.from : `${seg.from} → ${seg.to.slice(5)}`;
+            return (
+              <div key={i}
+                   className={`cs-seg${seg.team ? "" : " cs-gap"}${seg.moved ? " cs-move" : ""}`}
+                   style={{ "--w": seg.weight } as React.CSSProperties}
+                   title={`${label} · ${seg.team ?? "no NBA team"}`}>
+                <div className="cs-tenure">
+                  {seg.team && <span className="cs-code">{seg.team}</span>}
+                </div>
+                {/* a trade splits one season into two segments; year the first only */}
+                <span className="cs-yr">
+                  {i === 0 || segs[i - 1].from !== seg.from ? `’${seg.from.slice(2, 4)}` : ""}
+                </span>
               </div>
-              <span className="cs-yr">{yr}</span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
       <div className="source">
-        His career, season by season — the instability rate counts each team change
-        (tick) once and each dashed gap season with no NBA team twice
+        {span[0].slice(0, 4)}–{span[span.length - 1]}: the instability rate counts
+        each team change (cyan tick) once and each dashed gap season twice
         {moves + gaps > 0
-          ? `: ${moves} change${moves === 1 ? "" : "s"}, ${gaps} gap season${gaps === 1 ? "" : "s"} here`
+          ? ` — ${moves} change${moves === 1 ? "" : "s"}, ${gaps} gap season${gaps === 1 ? "" : "s"} here`
           : ""}.
       </div>
     </>

@@ -81,6 +81,14 @@ LLM_PRICES = {
     # and says so rather than inventing a dollar figure.
 }
 
+# Shortlist cuts DISABLED in export_candidates.py, by number (1-7). Env-toggleable:
+# GI_CUTS_OFF="" re-enables everything, GI_CUTS_OFF="4,5" disables just those.
+# Default 4,5,7: cuts 4/5 deleted two CONFIRMED cases (the methodology audit's
+# strongest finding) and cut 7 kept Porter only via a missing-experience accident
+# while its intent (career precarity) is now measured directly by instability.
+CUTS_OFF = {int(x) for x in
+            os.environ.get("GI_CUTS_OFF", "4,5,7").split(",") if x.strip()}
+
 # --- scope for v1: league-wide, 2023-24 regular season, points props ---
 SEASON = "2023-24"
 SEASON_TYPE = "regular"                                    # game_id prefix '002'

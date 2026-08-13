@@ -233,9 +233,15 @@ def main():
     # `cut_failed` records the FIRST cut a row failed, so an eliminated game can explain
     # itself in the UI. First, not all -- the funnel is sequential and the first failure
     # is the one that actually removed it.
+    # config.CUTS_OFF (env GI_CUTS_OFF) disables cuts by number WITHOUT deleting
+    # their definitions -- a disabled cut is skipped for both membership and
+    # cut_failed, and printed as such so a run never hides which gate was off.
     keep = pd.Series(True, index=d.index)
     d["cut_failed"] = pd.Series(pd.NA, index=d.index, dtype="object")
     for label, mask in cuts:
+        if int(label.split()[0]) in config.CUTS_OFF:
+            print(f"{label:<48}     OFF   (GI_CUTS_OFF)")
+            continue
         before = int(keep.sum())
         ok = mask.fillna(False) if mask.dtype == bool else mask
         newly_failed = keep & ~ok

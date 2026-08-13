@@ -547,30 +547,46 @@ table.ledger { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .motive-big b { font-family: var(--display); font-size: clamp(22px, 1.8vw, 28px); font-weight: 750; letter-spacing: -0.02em; }
 .motive-big span { font-size: 11px; color: var(--muted); max-width: 52ch; line-height: 1.5; }
 
-/* the motive exhibit's career strip: one cell per league season of the span.
-   Played seasons are quiet track-filled tiles labeled with the team code
-   (identity is the LABEL, not a hue); a mid-season trade splits the tile; a
-   cyan left tick marks a change of team -- the motive color, because those
-   boundaries are what the instability rate counts. Gap seasons are hollow and
-   dashed, so "no NBA team" can never read as data. Flat tiles, 2px surface
-   gaps between fills, same grammar as every other exhibit. Cells cap at 64px
-   so a two-season career stays a compact mark, not a banner. */
-.career-strip { display: flex; gap: 2px; margin: 10px 0 0; }
-.cs-cell { flex: 1 1 0; max-width: 64px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.cs-teams { display: flex; gap: 2px; height: 22px; }
-.cs-team {
-  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;
-  background: var(--track); color: var(--ink);
-  font-size: 9.5px; font-weight: 650; letter-spacing: 0.05em; overflow: hidden;
+/* the motive exhibit's career timeline: TENURE segments on one recessive
+   baseline. Consecutive seasons with the same team merge into one rounded
+   bar whose width is proportional to the stay (--w = season count; a trade
+   season contributes half to each side), so the shape of the career -- one
+   long bar vs a chain of stubs -- is the picture the instability rate is
+   scoring. The team code sits inside its segment on the quietest fill token
+   (identity is the LABEL, never a hue); a cyan inset tick marks a change of
+   team; merged gap years are one dashed outline the baseline runs through.
+   Text can NEVER clip: every segment floors at its own label width
+   (min-content) and the strip scrolls in its wrapper if the column gets
+   narrower than the floors -- labels are never sacrificed to fit. */
+.career-scroll { overflow-x: auto; max-width: 640px; }
+.career-strip {
+  position: relative; display: flex; gap: 4px;
+  width: 100%; min-width: max-content; margin: 8px 0 0;
 }
-.cs-team.cs-move { border-left: 2px solid var(--cyan); }
-.cs-team.cs-none {
-  background: none; border: 1px dashed var(--faint); color: var(--faint);
-  font-weight: 400;
+.career-strip::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 9px;
+  height: 2px; background: var(--faint); opacity: 0.5;
 }
+.cs-seg {
+  flex: var(--w) 1 calc(var(--w) * 34px);
+  min-width: min-content;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.cs-tenure {
+  position: relative; /* paints above the absolutely-positioned baseline */
+  display: flex; align-items: center; justify-content: center;
+  height: 20px; border-radius: 5px; padding: 0 7px;
+  background: var(--track);
+}
+.cs-code {
+  font-size: 9.5px; font-weight: 650; letter-spacing: 0.05em; color: var(--ink);
+  white-space: nowrap;
+}
+.cs-seg.cs-move .cs-tenure { box-shadow: inset 2px 0 0 var(--cyan); }
+.cs-seg.cs-gap .cs-tenure { background: none; border: 1.5px dashed var(--faint); min-width: 22px; }
 .cs-yr {
-  font-size: 8px; color: var(--faint); text-align: center;
-  font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
+  min-height: 11px; font-size: 8.5px; color: var(--faint); text-align: left;
+  padding-left: 2px; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 
 .flagrow { cursor: pointer; }
