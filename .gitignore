@@ -52,3 +52,4 @@ frontend/.vite/
 # file it is generated from -- and every byte of it is reproducible in under two seconds
 # by `make csv`, which falls back to the committed .duckdb when there is no Postgres.
 # Committing it would triple the clone size to ship a redundant copy of the same rows.
+/data
