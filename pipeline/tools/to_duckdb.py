@@ -45,6 +45,7 @@ KEEP = [
     "player_games",            # every player-game, for season strips and baselines
     "player_baselines",        # his own season, precomputed
     "player_salaries",         # motive, and the salary shown on the case page
+    "player_career_stints",    # season-by-season team history, the case view's career strip
     "players", "teams", "games",
     "odds_events",
     "prop_quotes",             # includes the 'poll' curve rows the case chart draws

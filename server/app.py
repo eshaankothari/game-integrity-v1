@@ -82,6 +82,11 @@ SELECT s.rank, s.rank_all, s.in_shortlist, s.cut_failed,
        f.distance, f.touches, f.passes, f.game_score,
        f.open_line, f.open_under, f.line_move_pct, f.under_move_pct,
        f.price_only_move, f.n_player_games,
+       -- Motive provenance: the career-instability rate and its gap-season count,
+       -- carried on features by L5 so the case view can show what fed the motive
+       -- blend (MOTIVE_W). NULL = missing history, not zero -- the UI renders
+       -- nothing rather than a rate of 0 (invariant 1).
+       f.instability_career, f.gap_seasons,
        z.game_z, z.effort_z, z.game_z_tier, z.effort_z_tier, z.shortfall_z,
        z.p_price, z.p_line, z.n_market,
        z.mk_p_price, z.mk_p_line, z.mk_line_mv, z.mk_price_mv,
@@ -898,6 +903,23 @@ def player_flags(player_id: int):
         raise HTTPException(404, "player has no scored games")
     rows = [_decorate(r) for r in rows]
     return {"player": rows[0]["player"], "rows": rows}
+
+
+@app.get("/api/player/{player_id}/career")
+def player_career(player_id: int):
+    """One player's season-by-season team history, in career order -- the stints
+    behind the instability rate, so the case view can draw the movement instead of
+    only stating it. `seq` is the loader's 0-based career position (within-season
+    API order preserved), so ORDER BY seq is a total order for one player and
+    replays mid-season trades exactly. 404 = no history recorded for this player
+    (invariant 1: absent, not an empty career)."""
+    rows = q("SELECT season, seq, team_abbr FROM player_career_stints "
+             "WHERE player_id = %(pid)s ORDER BY seq", {"pid": player_id})
+    if not rows:
+        raise HTTPException(404, "no career history for this player")
+    seasons = [r["season"] for r in rows]
+    return {"stints": rows,
+            "first_season": min(seasons), "last_season": max(seasons)}
 
 
 @app.get("/api/calendar")

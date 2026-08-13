@@ -4,10 +4,18 @@ SUMMARY: pulls the same historical-odds endpoint as L3, but at a LADDER of offse
 before tip instead of one, so a player-game has a movement series rather than two
 endpoints. Written for the case-view graph.
 
-COSMETIC BY CONSTRUCTION. Every row lands with snapshot_role='poll'. standardize.py
-selects `FILTER (WHERE snapshot_role = 'close')` and `'open'` by name, so nothing here
-can reach the score, the blocks or the funnel. Confirm with `python -m pipeline.load_data.load_line_history
---verify`, which re-reads score_100 and fails loudly if a single row moved.
+DISPLAY-FIRST, WITH ONE SCORED USE. Every row lands with snapshot_role='poll'.
+standardize.py selects `FILTER (WHERE snapshot_role = 'close')` and `'open'` by name --
+and, for player-events with NO T-12 'open' row, uses the EARLIEST poll (largest
+offset_from_tip_sec) as the fallback opening observation, recording the window in
+player_game_features.open_offset_hours and the provenance in open_source. That is the
+only way a poll reaches the score. Rows with a true 'open' are untouched: no poll
+predates T-12. Confirm with `python -m pipeline.load_data.load_line_history --verify`,
+which checks exactly that contract and fails loudly if a poll ever displaces an open.
+
+NOTE: a poll write can make features STALE -- a player-event with no opening
+observation may gain a fallback open on the next `pipeline.score.standardize run`.
+verify() reports that count; it is expected, not a failure.
 
   - 'poll' is already permitted by prop_quotes_snapshot_role_check -- no migration.
   - The primary key already carries snapshot_requested, so many timestamps per
@@ -151,25 +159,67 @@ def rows_for(event_id, commence, payload, hours, resolve, unresolved, methods):
 
 
 def verify(conn):
-    """score_100 must be byte-identical after any poll write. If this ever fails, a
-    'poll' row has leaked into the scoring path and the run must be treated as a
-    methodology change, not a cosmetic one."""
+    """The AMENDED poll invariant: a 'poll' row may reach the score ONLY as the
+    fallback opening observation for a player-event with no T-12 'open' snapshot on
+    the scored book. Rows that HAVE an 'open' must be unaffected by polls. Checked
+    structurally against player_game_features:
+
+      1. every feature row whose player-event has an 'open' snapshot uses it
+         verbatim -- open_source = 'open' and open_line/open_under match it exactly;
+      2. open_source = 'poll' appears only where NO 'open' snapshot exists;
+      3. no poll sits at or before T-12h, so a poll can never out-early a true open.
+
+    Any failure means a poll displaced a true open -- treat the run as a methodology
+    change, not a cosmetic one. A poll write CAN legitimately make features stale
+    (a row with no opening observation gains a fallback on the next standardize run);
+    that count is reported, not failed."""
     with conn.cursor() as cur:
-        cur.execute("""SELECT count(*),
-              count(*) FILTER (WHERE s.score_100 IS DISTINCT FROM z.score_100),
-              count(*) FILTER (WHERE s.score IS DISTINCT FROM z.score)
-            FROM player_game_scores s
-            JOIN player_game_z z USING (player_id, game_id)""")
-        n, d100, draw = cur.fetchone()
-        cur.execute("SELECT count(*) FROM prop_quotes WHERE snapshot_role = 'poll'")
-        polls = cur.fetchone()[0]
-    print(f"rows compared            : {n:,}")
-    print(f"score_100 differing      : {d100}")
-    print(f"score differing          : {draw}")
-    print(f"prop_quotes 'poll' rows  : {polls:,}")
-    if d100 or draw:
-        sys.exit("!! SCORES MOVED -- a poll row reached the scoring path")
-    print("OK: the poll rows are invisible to the model.")
+        cur.execute("""
+            SELECT count(*) FILTER (WHERE op.line IS NOT NULL
+                       AND (f.open_source IS DISTINCT FROM 'open'
+                            OR f.open_line  IS DISTINCT FROM op.line
+                            OR f.open_under IS DISTINCT FROM op.under)) AS displaced,
+                   count(*) FILTER (WHERE f.open_source = 'poll'
+                       AND op.line IS NOT NULL)                         AS poll_over_open,
+                   count(*) FILTER (WHERE f.open_source = 'open')       AS n_open,
+                   count(*) FILTER (WHERE f.open_source = 'poll')       AS n_poll
+              FROM player_game_features f
+              JOIN odds_events e ON e.game_id = f.game_id
+              LEFT JOIN LATERAL (
+                  SELECT max(q.line) AS line, max(q.under_price) AS under
+                    FROM prop_quotes q
+                   WHERE q.event_id  = e.event_id
+                     AND q.player_id = f.player_id
+                     AND q.book      = %s
+                     AND q.snapshot_role = 'open'
+                  HAVING count(*) > 0
+              ) op ON true""", (config.BOOK,))
+        displaced, poll_over_open, n_open, n_poll = cur.fetchone()
+        cur.execute("""SELECT count(*) FROM prop_quotes
+                        WHERE snapshot_role = 'poll'
+                          AND offset_from_tip_sec >= 12 * 3600""")
+        early_polls = cur.fetchone()[0]
+        cur.execute("""
+            SELECT count(*)
+              FROM player_game_features f
+              JOIN odds_events e ON e.game_id = f.game_id
+             WHERE f.open_source IS NULL
+               AND EXISTS (SELECT 1 FROM prop_quotes q
+                            WHERE q.event_id  = e.event_id
+                              AND q.player_id = f.player_id
+                              AND q.book      = %s
+                              AND q.snapshot_role = 'poll')""", (config.BOOK,))
+        stale = cur.fetchone()[0]
+    print(f"feature rows, open from 'open'         : {n_open:,}")
+    print(f"feature rows, open from 'poll' fallback: {n_poll:,}")
+    print(f"rows with an 'open' not using it       : {displaced}")
+    print(f"poll-sourced despite an 'open'         : {poll_over_open}")
+    print(f"polls at/before T-12h                  : {early_polls}")
+    print(f"stale (new poll, not yet rescored)     : {stale}")
+    if displaced or poll_over_open or early_polls:
+        sys.exit("!! a poll row displaced a T-12 open -- treat this as a methodology "
+                 "change and re-run pipeline.score.standardize")
+    print("OK: every T-12 open is used verbatim; polls appear only as fallback opens.")
 
 
 def main(mode, plan, group, limit=None):

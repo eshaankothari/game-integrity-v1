@@ -26,7 +26,8 @@ once.
 ```
 played player-games (minutes > 0)      26,393
   with a FanDuel CLOSING line          15,498    <- the population
-  with an OPENING line                  8,037
+  with an OPENING observation           8,992    (8,037 T-12 'open',
+                                                  955 earliest-'poll' fallback)
 ```
 
 **A closing line is required.** `shortfall` divides by it and `p_price` is derived from
@@ -35,12 +36,20 @@ played games (41%), including **47 player-games whose line was opened and later 
 Pulled lines are a deliberate exclusion, not an oversight — a withdrawn market is a
 different question from a market that priced through to tip-off.
 
-**An opening line is not required, and its absence is never a penalty.** 48% of rows have
-none. The market block divides by the weight *present*, so those rows are judged on price
-and line alone rather than scored as though the movement terms had been observed and
-found neutral. Cuts 4 and 5 use `~(x > 0)` rather than `x <= 0` for the same reason: a
+**An opening observation is not required, and its absence is never a penalty.** 42% of
+rows have none. The market block divides by the weight *present*, so those rows are judged
+on price and line alone rather than scored as though the movement terms had been observed
+and found neutral. Cuts 4 and 5 use `~(x > 0)` rather than `x <= 0` for the same reason: a
 NaN comparison is False in pandas, so the direct form would delete every row with nothing
 to test.
+
+**The effective open.** Where a T-12 `'open'` snapshot exists it is the open, verbatim.
+Where none does, the *earliest* `'poll'` snapshot (the one furthest before tip) stands in
+as the opening observation — used as-is, with the observation window recorded in
+`player_game_features.open_offset_hours` (~12.1h for a true open; median 2.1h, p75 3.1h
+for a poll fallback) and the provenance in `open_source` (`'open' | 'poll' | NULL`). No
+poll predates T-12, so a fallback can never displace a true open; 942 propped rows gained
+a movement observation this way.
 
 **Baselines are computed over every game a player played**; the propped filter is applied
 last. Filtering first would make each player's "normal" the mean of his propped games —
@@ -199,8 +208,8 @@ downward drift is what under-side money produces.
 |---|---:|
 | `p_price` percentile of the closing under price | 100% |
 | `p_line` percentile of the line | 100% |
-| `line_mv` −`line_move_pct` | 52% |
-| `price_mv` −`price_only_move` | 28% |
+| `line_mv` −`line_move_pct` | 58% |
+| `price_mv` −`price_only_move` | 32% |
 
 **Normalised by the weight *present*, not the full total**, so a row with no opening line
 is judged on price and line alone rather than penalised for two components nobody could
@@ -211,15 +220,33 @@ own: de-vigged closing lean was monotonic across five buckets at **z = 3.81** wi
 coverage. `line_move_pct` tested **backwards** (47.1% under-hit vs a 52.7% baseline), and
 `price_only_move`, cross-book divergence and delta-`p_under` were all null.
 
-### 2.3 `motive` — salary
+### 2.3 `motive` — salary and career instability
 
 ```
-motive = z(1 − salary percentile);   unlisted (two-way / 10-day) scores maximum
+motive          = z(0.75 · salary_comp + 0.25 · instability_pct)
+salary_comp     = 1 − salary percentile;  unlisted (two-way / 10-day) scores maximum
+instability_pct = percentile of instability_career;  missing history → neutral 0.5
 ```
 
 The only axis about what a player **risked** rather than what he did. What is forfeited
 by throwing a game spans two orders of magnitude on one roster — roughly $50M for a max
 contract against $560K for a two-way.
+
+**Career instability** adds how precarious the career has *been*, not just what it pays
+now. `instability_career` (from `player_career`, one free `PlayerCareerStats` call per
+propped player) is `(career team changes + gap seasons) / seasons of career span` — a
+rate, so a chronic churner like Jontay Porter (1 move + 2 gap seasons over a 4-season
+span = 0.750) outranks a long-career journeyman whose many moves are spread over many
+seasons. A *gap season* is a league season strictly inside the player's own
+[first, last] span with no NBA row at all — a year the league didn't want him.
+
+It is held at **0.25 of the block** because it overlaps salary — the churned are also
+the cheap (measured r = −0.21 between `instability_career` and salary percentile across
+the 406 listed-salary propped players) — and because it sees
+only the NBA calendar: G-League churn between NBA stints is invisible, partly proxied
+by gap seasons. **Missing history maps to neutral 0.5 *after* ranking, never max and
+never zero** — unlike an unlisted salary, a missing career row is absence, not evidence
+(invariant 1).
 
 **Percentile, not raw dollars.** Salary is skewed +1.78 with 67% of players below the
 mean, so a z-score spends 92% of its range on the top half of earners: the entire bottom
@@ -256,17 +283,17 @@ nothing, because "cheap" is what the two label players have in common.
 
 ## 3. The funnel
 
-Applied **before** ranking. Seven cuts, 15,498 → **3,207**.
+Applied **before** ranking. Seven cuts, 15,498 → **3,077**.
 
 ```
 start                                        15,498
 1  game_z   top 25%  (he had a good game)    11,595   (−3,903)
 2  effort_z top 25%  (more involved)          9,660   (−1,935)
-3  market   bottom 25% (leaned over)          7,346   (−2,314)
-4  no upward line move        (NaN kept)      6,936   (−410)
-5  no upward price-only move  (NaN kept)      6,033   (−903)
-6  salary <= $20M or unlisted                 4,810   (−1,223)
-7  experience > 2 seasons     (NaN kept)      3,207   (−1,603)
+3  market   bottom 25% (leaned over)          7,349   (−2,311)
+4  no upward line move        (NaN kept)      6,881   (−468)
+5  no upward price-only move  (NaN kept)      5,841   (−1,040)
+6  salary <= $20M or unlisted                 4,630   (−1,211)
+7  experience > 2 seasons     (NaN kept)      3,077   (−1,553)
 ```
 
 **Cut 7 removes players in their first three seasons.** It is written
@@ -410,7 +437,7 @@ wrong only if the ingest was wrong; a z is wrong if the *baseline population* ch
 which happens every time a game is added. Keeping them apart means re-standardising never
 rewrites the evidence it was computed from.
 
-`player_game_scores` carries **all 15,498 propped games**, not just the 3,207 survivors.
+`player_game_scores` carries **all 15,498 propped games**, not just the 3,077 survivors.
 `rank` is NULL for eliminated rows — they have no position in the shortlist, which is
 different from being last in it — and `cut_failed` records the first cut that removed
 them, so the UI can answer "why isn't this game here?" from the same query:
@@ -425,14 +452,14 @@ SELECT rank, player, game_date, points, close_line, shortfall,
 
 ```
 cut_failed breakdown            n
-(passed all)                 3,207
+(passed all)                 3,077
 1  game_z   top 25%          3,903
-3  market   bottom 25%       2,314
+3  market   bottom 25%       2,311
 2  effort_z top 25%          1,935
-7  experience > 2 seasons    1,603
-6  salary <= $20M            1,223
-5  no upward price-only move   903
-4  no upward line move         410
+7  experience > 2 seasons    1,553
+6  salary <= $20M            1,211
+5  no upward price-only move 1,040
+4  no upward line move         468
 ```
 
 L5 owns the weights. `tests/experiments/weight_audit.py` reads them out of `pipeline/score/standardize.py` by

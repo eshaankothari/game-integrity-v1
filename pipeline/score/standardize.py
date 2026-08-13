@@ -2,7 +2,7 @@
 
     performance   what he did on the floor, against two baselines plus the market's
     market        what the prices did before tip-off
-    motive        what he stood to lose
+    motive        what he stood to lose: salary (0.75) + career instability (0.25)
 
     score     = 0.45*performance + 0.30*market + 0.25*motive     (raw, z-scale)
     score_100 = (score - min) / (max - min) * 100                (what the UI shows)
@@ -16,14 +16,15 @@ The raw `score` is kept because a percentile is defined against a POPULATION: ad
 and every 0-100 number shifts, while `score` does not. It is the number to compare across
 runs.
 
-No API calls. Pure computation over player_games, prop_quotes, player_salaries and
-player_game_residuals.
+No API calls. Pure computation over player_games, prop_quotes, player_salaries,
+player_career and player_game_residuals.
 
 POPULATION -- read this before anything else.
 
     played player-games (minutes > 0)      26,393
       with a FanDuel CLOSING line          15,498    <- the output
-      with an OPENING line                  8,037
+      with an OPENING observation           8,992    (8,037 T-12 'open',
+                                                      955 earliest-'poll' fallback)
 
     BASELINES are computed over EVERY game a player played. The propped filter is
     applied at the END. Filtering first would make each player's "normal" the mean of
@@ -34,10 +35,16 @@ POPULATION -- read this before anything else.
     so a row without one has no performance and no market block. 47 player-games opened
     a line that was later PULLED and never closed; those are excluded with the rest.
 
-    AN OPENING LINE IS NOT REQUIRED, and its absence is never a penalty. 48 percent of
-    rows have none. The market block divides by the weight PRESENT, so those rows are
-    judged on price and line alone rather than scored as though the movement terms had
-    been observed and found neutral.
+    AN OPENING OBSERVATION IS NOT REQUIRED, and its absence is never a penalty. The
+    market block divides by the weight PRESENT, so those rows are judged on price and
+    line alone rather than scored as though the movement terms had been observed and
+    found neutral.
+
+    THE EFFECTIVE OPEN. Where a T-12 'open' snapshot exists it is the open. Where none
+    does, the EARLIEST 'poll' snapshot (the one furthest before tip) stands in as the
+    opening observation -- used as-is, with the window recorded in open_offset_hours
+    and the provenance in open_source ('open' | 'poll' | NULL). No poll predates T-12,
+    so a poll can never displace a true open. Rows with neither stay NaN.
 
     python -m pipeline.score.standardize           # DRY: report, write nothing
     python -m pipeline.score.standardize run
@@ -107,6 +114,16 @@ MARKET_W = {"p_price": 0.25, "p_line": 0.25, "line_mv": 0.25, "price_mv": 0.25}
 # the score cannot become a salary sort.
 BLOCK_W = {"performance": 0.45, "market": 0.30, "motive": 0.25}
 
+# WITHIN the motive block: salary carries 0.75, career instability 0.25. Instability
+# ((team changes + 2*gap seasons)/(span+1), from player_career) is held
+# at a quarter because (a) it overlaps salary -- the churned are also the cheap,
+# measured r = -0.21 between instability_career and salary percentile across the 406
+# listed-salary propped players (-0.10 row-weighted) -- so part of its content is
+# already in the block, and (b) it is measured against the NBA calendar only: G-League
+# churn between NBA stints is invisible here, partly proxied by gap_seasons, so the
+# stat is too coarse to carry more of the block than the direct dollars-at-risk term.
+MOTIVE_W = {"salary": 0.75, "instability": 0.25}
+
 # The nine involvement stats, each standardised separately then averaged. fga is
 # excluded: Game Score already charges -0.7 per attempt, so including it would count
 # shot volume twice with opposite signs.
@@ -130,8 +147,10 @@ SELECT pg.player_id, pg.game_id, g.game_date, p.position,
        pg.touches, pg.passes, pg.distance, pg.contested_shots,
        pg.deflections, pg.loose_balls, pg.box_outs, pg.screen_assists,
        r.tier,
-       b.close_line, b.close_under, b.open_line, b.open_under,
-       s.salary, s.has_listed_salary
+       b.close_line, b.close_under, b.open_line, b.open_under, b.open_offset_sec,
+       pl.poll_line, pl.poll_under, pl.poll_offset_sec,
+       s.salary, s.has_listed_salary,
+       pc.instability_career, pc.gap_seasons
   FROM player_games pg
   JOIN games   g ON g.game_id   = pg.game_id
   JOIN players p ON p.player_id = pg.player_id
@@ -140,17 +159,44 @@ SELECT pg.player_id, pg.game_id, g.game_date, p.position,
       SELECT max(line)        FILTER (WHERE snapshot_role = 'close') AS close_line,
              max(under_price) FILTER (WHERE snapshot_role = 'close') AS close_under,
              max(line)        FILTER (WHERE snapshot_role = 'open')  AS open_line,
-             max(under_price) FILTER (WHERE snapshot_role = 'open')  AS open_under
+             max(under_price) FILTER (WHERE snapshot_role = 'open')  AS open_under,
+             max(offset_from_tip_sec)
+                              FILTER (WHERE snapshot_role = 'open')  AS open_offset_sec
         FROM prop_quotes q
        WHERE q.event_id  = e.event_id
          AND q.player_id = pg.player_id
          AND q.book      = %(book)s
   ) b ON true
+  -- FALLBACK OPEN: the EARLIEST 'poll' snapshot (largest offset before tip), used as
+  -- the opening observation ONLY where no T-12 'open' row exists (the substitution
+  -- happens in load(), which also records provenance). Line and under come from the
+  -- SAME row -- a LIMIT 1 lateral, not per-column aggregates -- and the ORDER BY is a
+  -- total order so ties resolve identically on every run. No poll predates T-12, so
+  -- rows that already have an 'open' cannot be affected (verified by
+  -- pipeline.load_data.load_line_history --verify).
+  LEFT JOIN LATERAL (
+      SELECT q.line                AS poll_line,
+             q.under_price         AS poll_under,
+             q.offset_from_tip_sec AS poll_offset_sec
+        FROM prop_quotes q
+       WHERE q.event_id  = e.event_id
+         AND q.player_id = pg.player_id
+         AND q.book      = %(book)s
+         AND q.snapshot_role = 'poll'
+       ORDER BY q.offset_from_tip_sec DESC, q.line_last_update DESC,
+                q.snapshot_requested DESC, q.line DESC
+       LIMIT 1
+  ) pl ON true
   -- LEFT, not inner: a handful of players have no salary row at all (mid-season
   -- waivers the end-of-season roster snapshot missed). An inner join would delete
   -- their games silently rather than leaving the salary NULL.
   LEFT JOIN player_salaries s
          ON s.player_id = pg.player_id AND s.season = %(season)s
+  -- LEFT: career history exists for the propped population; a player without a row
+  -- (fetch failed / never propped) stays NULL, which add_motive maps to NEUTRAL --
+  -- missing history is absence, not evidence (invariant 1).
+  LEFT JOIN player_career pc
+         ON pc.player_id = pg.player_id
   LEFT JOIN player_game_residuals r
          ON r.player_id = pg.player_id AND r.game_id = pg.game_id
  WHERE pg.minutes > 0 AND pg.points IS NOT NULL
@@ -160,13 +206,32 @@ SELECT pg.player_id, pg.game_id, g.game_date, p.position,
 NUMERIC = ["minutes", "points", "fgm", "fga", "fta", "ftm", "rebounds",
            "rebounds_off", "assists", "steals", "blocks", "turnovers", "fouls",
            "usage_pct", "turnover_ratio", "close_line", "close_under",
-           "open_line", "open_under", "salary"] + EFFORT
+           "open_line", "open_under", "open_offset_sec",
+           "poll_line", "poll_under", "poll_offset_sec", "salary",
+           "instability_career", "gap_seasons"] + EFFORT
 
 
 def load(conn):
     d = pd.read_sql(SQL, conn, params={"book": config.BOOK, "season": config.SEASON})
     for c in NUMERIC:
         d[c] = pd.to_numeric(d[c], errors="coerce")
+
+    # EFFECTIVE OPEN. Where no T-12 'open' snapshot exists, the earliest 'poll'
+    # snapshot stands in as the opening observation -- used AS-IS, with the window
+    # RECORDED: open_offset_hours says how far before tip the observation actually
+    # was (~12.06h for a true open, typically 2-3h for a poll), and open_source says
+    # which kind of row supplied it. Provenance only -- neither column feeds a z or
+    # a weight. ABSENCE STAYS ABSENCE: a row with neither an open nor a poll keeps
+    # open_line/open_under NaN, never zero, so add_movement() still yields NaN there.
+    has_open = d["open_line"].notna()
+    use_poll = ~has_open & d["poll_line"].notna()
+    d["open_line"] = d["open_line"].where(~use_poll, d["poll_line"])
+    d["open_under"] = d["open_under"].where(~use_poll, d["poll_under"])
+    offset_sec = d["open_offset_sec"].where(~use_poll, d["poll_offset_sec"])
+    d["open_offset_hours"] = (offset_sec / 3600).round(3)
+    d["open_source"] = np.select([has_open, use_poll], ["open", "poll"], default=None)
+    d = d.drop(columns=["open_offset_sec", "poll_line", "poll_under",
+                        "poll_offset_sec"])
     return d
 
 
@@ -314,27 +379,42 @@ def add_market(d):
 # --- motive -----------------------------------------------------------------
 
 def add_motive(d):
-    """Salary -- the only axis about what a player RISKED rather than what he did.
+    """What a player RISKED rather than what he did: salary (0.75) plus career
+    instability (0.25), blended per MOTIVE_W, then z-scored.
 
-    PERCENTILE, NOT DOLLARS. Salary is skewed +1.78 with 67 percent of players below the
-    mean, so a z-score spends 92 percent of its range on the top half of earners: the
-    entire bottom half, from a two-way deal to the $4.3M median, compresses into a
-    0.38-wide band. That is backwards for an axis meant to discriminate among the
-    underpaid. rank(pct=True) is uniform by construction and gives the 37 players on the
-    exact $2.02M minimum one identical value rather than spreading them arbitrarily.
+    SALARY COMPONENT -- percentile, not dollars. Salary is skewed +1.78 with 67 percent
+    of players below the mean, so a z-score spends 92 percent of its range on the top
+    half of earners: the entire bottom half, from a two-way deal to the $4.3M median,
+    compresses into a 0.38-wide band. That is backwards for an axis meant to
+    discriminate among the underpaid. rank(pct=True) is uniform by construction and
+    gives the 37 players on the exact $2.02M minimum one identical value rather than
+    spreading them arbitrarily.
 
     UNLISTED SALARY SCORES MAXIMUM, NOT MISSING. basketball-reference publishes no figure
     for two-way and 10-day contracts, and those are the lowest-paid players on any
     roster. Treating NULL as unknown would drop exactly the population this axis exists
     to surface. Jontay Porter is one of these rows.
 
+    INSTABILITY COMPONENT -- instability_career from player_career: (career team
+    changes + 2*gap seasons) / (span seasons + 1). The RATE form, so a chronic
+    churner (Porter: 1.000) outranks a long-career journeyman whose many moves are
+    spread over many seasons; gaps weigh double (a gap season means no team wanted
+    him) and the +1 pseudo-season stops a single-season trade from posting the
+    league's most extreme rate -- the full rationale lives in load_career.py. Percentiled over the full propped population, like
+    salary; NaN mapped to NEUTRAL 0.5 AFTER ranking, never max and never zero --
+    a player with no career row has missing history, not evidence of anything
+    (invariant 1). Contrast with unlisted salary, where absence of a published
+    figure IS evidence of a two-way deal.
+
     pd.Series around np.where, not the bare array: numpy's mean and std PROPAGATE NaN
     while pandas skips it, so the handful of players with no salary row at all would
     otherwise turn the entire column into NaN.
     """
     pct = d["salary"].rank(pct=True)
-    raw = pd.Series(np.where(d["has_listed_salary"] == False, 1.0, 1 - pct),
-                    index=d.index)
+    salary_comp = pd.Series(np.where(d["has_listed_salary"] == False, 1.0, 1 - pct),
+                            index=d.index)
+    instability_pct = d["instability_career"].rank(pct=True).fillna(0.5)
+    raw = MOTIVE_W["salary"] * salary_comp + MOTIVE_W["instability"] * instability_pct
     d["motive"] = ((raw - raw.mean()) / raw.std()).round(3)
     return d
 
@@ -434,9 +514,11 @@ FEATURE_COLS = ["player_id", "game_id", "game_date", "position", "tier",
                 "minutes", "points", "fga", "usage_pct", "turnover_ratio",
                 "distance", "touches", "passes", "rebounds", "assists",
                 "close_line", "close_under", "open_line", "open_under",
+                "open_offset_hours", "open_source",
                 "line_move_pct", "under_move_pct", "price_only_move",
                 "margin_vs_line", "game_score", "shortfall",
-                "salary", "has_listed_salary", "n_player_games"]
+                "salary", "has_listed_salary", "n_player_games",
+                "instability_career", "gap_seasons"]
 
 Z_COLS = ["player_id", "game_id", "game_date",
           "game_z", "effort_z", "game_z_tier", "effort_z_tier", "shortfall_z",
@@ -452,7 +534,17 @@ Z_COLS = ["player_id", "game_id", "game_date",
 FEATURE_DDL = {"tier": "TEXT", "position": "TEXT", "passes": "NUMERIC(8,2)",
                "game_score": "NUMERIC(8,2)", "shortfall": "NUMERIC(6,3)",
                "salary": "BIGINT", "has_listed_salary": "BOOLEAN",
-               "n_player_games": "INTEGER"}
+               "n_player_games": "INTEGER",
+               # PROVENANCE of the opening observation, not model inputs: how many
+               # hours before tip it was taken, and whether it was a true T-12
+               # 'open' or the earliest 'poll' standing in for one. NULL where no
+               # opening observation exists at all.
+               "open_offset_hours": "NUMERIC(8,3)", "open_source": "TEXT",
+               # Career-instability inputs carried from player_career for provenance:
+               # instability_career feeds add_motive (per MOTIVE_W) and NOTHING else --
+               # no z, no cut. gap_seasons is its most opaque ingredient, kept
+               # inspectable. NULL where the player has no career row.
+               "instability_career": "NUMERIC(6,3)", "gap_seasons": "INTEGER"}
 
 # Everything standardised, plus the old four-baseline sweep's per-stat z columns. All of
 # it either moved to player_game_z or belongs to a layer that no longer exists.
@@ -582,7 +674,9 @@ def main(dry=True):
         print(f"played player-games (minutes > 0) : {len(raw):,}")
         print(f"  with a CLOSING line             : {raw['close_line'].notna().sum():,}"
               f"   <- the output population")
-        print(f"  with an OPENING line            : {raw['open_line'].notna().sum():,}")
+        n_src = raw["open_source"].value_counts()
+        print(f"  with an OPENING observation     : {raw['open_line'].notna().sum():,}"
+              f"   ('open' {n_src.get('open', 0):,}, poll fallback {n_src.get('poll', 0):,})")
         print(f"  distinct players                : {raw['player_id'].nunique():,}")
 
         d = build(raw)

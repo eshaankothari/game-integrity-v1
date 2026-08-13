@@ -2,7 +2,7 @@ import NumberFlow from "@number-flow/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { CaseDetail, fetchCase, SeasonGame } from "../api";
+import { CaseDetail, fetchCase, fetchPlayerCareer, SeasonGame } from "../api";
 import { RED_SCORE, fmtScore, isConfirmed } from "../severity";
 import { LineHistory } from "./LineHistory";
 import { PlayTimeline } from "./PlayTimeline";
@@ -115,6 +115,15 @@ function takeaway(c: CaseDetail) {
       : mk <= 25 ? "over"
       : "neither way";
 
+  // Career instability earns a sentence only when the rate is genuinely high:
+  // 0.5 is a team change or gap season every other season of his span. Null
+  // (older backend, no career row) renders nothing -- missing history is
+  // absence, not evidence.
+  const churn =
+    c.instability_career != null && c.instability_career >= 0.5
+      ? c.instability_career
+      : null;
+
   return (
     <>
       He scored <Hl n={0}><b>{c.points}</b> points</Hl> against {art}{" "}
@@ -124,6 +133,13 @@ function takeaway(c: CaseDetail) {
         <span>
           {" "}The market had leaned{" "}
           <Hl n={n + 1} tone={lean.includes("under") ? "under" : undefined}>{lean}</Hl> before tip.
+        </span>
+      )}
+      {churn != null && (
+        <span>
+          {" "}His career has been unstable —{" "}
+          <Hl n={n + (lean ? 2 : 1)}>{churn.toFixed(2)} team changes and gap seasons</Hl>{" "}
+          per season of his span.
         </span>
       )}
     </>
@@ -396,6 +412,89 @@ function SeasonStrip({ log, flaggedDate }: { log: SeasonGame[]; flaggedDate: str
   );
 }
 
+// ---- career team-movement strip ------------------------------------------
+// The motive exhibit's PICTURE: instability_career is a rate, this is what it
+// counted. One cell per league season of the career span, first season to the
+// scored one. A played season prints its team code on a quiet tile; two codes
+// in one cell are a mid-season move; a change of team from the previous stint
+// carries a cyan tick on its left edge -- the motive color, because those
+// boundaries are exactly what the rate counts. Gap seasons render hollow and
+// dashed ("no NBA team" in the tooltip), deliberately unlike both a played
+// tile and an empty state. Fetched per player like the shot chart fetches per
+// game; a 404 -- older backend, or no recorded history -- rejects and renders
+// NOTHING (invariant 1: missing history is absence, never a calm-looking
+// single-team career).
+function CareerStrip({ playerId }: { playerId: number }) {
+  const { data } = useQuery({
+    queryKey: ["career", playerId],
+    queryFn: () => fetchPlayerCareer(playerId),
+  });
+  if (!data || data.stints.length === 0) return null;
+
+  // Stints arrive in career order (seq); group per season, order preserved.
+  const bySeason = new Map<string, string[]>();
+  data.stints.forEach((s) => {
+    const t = bySeason.get(s.season);
+    if (t) t.push(s.team_abbr);
+    else bySeason.set(s.season, [s.team_abbr]);
+  });
+
+  // Every LEAGUE season in the span, so a gap year occupies real width
+  // instead of silently collapsing the timeline around it.
+  const span: string[] = [];
+  for (let y = +data.first_season.slice(0, 4); y <= +data.last_season.slice(0, 4); y++) {
+    span.push(`${y}-${String((y + 1) % 100).padStart(2, "0")}`);
+  }
+  const moves = data.stints.filter(
+    (s, i) => i > 0 && s.team_abbr !== data.stints[i - 1].team_abbr,
+  ).length;
+  const gaps = span.length - bySeason.size;
+
+  let prevTeam: string | null = null;
+  return (
+    <>
+      <div className="career-strip" role="img"
+           aria-label={`Career team history: ${span
+             .map((s) => `${s} ${(bySeason.get(s) ?? ["no NBA team"]).join(" then ")}`)
+             .join(", ")}`}>
+        {span.map((season) => {
+          const teams = bySeason.get(season);
+          // year labels shrink to just the opening year when the span is long
+          const yr = span.length > 9 ? `’${season.slice(2, 4)}` : season.slice(2);
+          return (
+            <div key={season} className="cs-cell"
+                 title={`${season} · ${teams ? teams.join(" → ") : "no NBA team"}`}>
+              <div className="cs-teams">
+                {teams ? (
+                  teams.map((t, i) => {
+                    const moved = prevTeam != null && t !== prevTeam;
+                    prevTeam = t;
+                    return (
+                      <span key={i} className={`cs-team${moved ? " cs-move" : ""}`}>
+                        {t}
+                      </span>
+                    );
+                  })
+                ) : (
+                  <span className="cs-team cs-none">—</span>
+                )}
+              </div>
+              <span className="cs-yr">{yr}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="source">
+        His career, season by season — the instability rate counts each team change
+        (tick) once and each dashed gap season with no NBA team twice
+        {moves + gaps > 0
+          ? `: ${moves} change${moves === 1 ? "" : "s"}, ${gaps} gap season${gaps === 1 ? "" : "s"} here`
+          : ""}.
+      </div>
+    </>
+  );
+}
+
 function money(v: number | null): string {
   return v == null ? "unlisted" : `$${(v / 1e6).toFixed(2)}M`;
 }
@@ -650,8 +749,29 @@ export function CaseView({ playerId, gameId }: Props) {
             : "no listed salary — a two-way / 10-day contract: the lowest-paid, most exposed profile, so it takes maximum motive weight"}
         </span>
       </div>
+      {/* The motive block's second term: the career-instability RATE (team
+          changes + gap seasons, gaps weighted double, per season of span). The
+          payload carries the rate and the gap-season count, not the team-change
+          count, so the gloss names only what the numbers actually are. Null --
+          older backend, or a player with no career row -- renders nothing:
+          missing history is absence, not a rate of zero. */}
+      {c.instability_career != null && (
+        <div className="motive-big">
+          <b>{c.instability_career.toFixed(2)}</b>
+          <span>
+            {"career instability — team changes + gap seasons per season of his career span"}
+            {c.gap_seasons != null && c.gap_seasons > 0 &&
+              ` · ${c.gap_seasons} gap season${c.gap_seasons === 1 ? "" : "s"} with no NBA team, weighted double`}
+          </span>
+        </div>
+      )}
+      {/* The picture behind the instability line above: which teams, which
+          seasons, where the gaps were. Fetches its own per-player payload and
+          renders nothing when there is no recorded history. */}
+      <CareerStrip playerId={c.player_id} />
       <div className="source">
-        Research shows that higher-paid players are less likely to engage in insider trading
+        Motive is 0.75 salary (inverted percentile — research shows that higher-paid
+        players are less likely to engage in insider trading) + 0.25 career instability
       </div>
       </motion.div>
     </div>

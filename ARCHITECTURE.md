@@ -121,10 +121,12 @@ so there is no second one to forget.
 **`ROLE_OFFSET = {"close": 0h, "open": 12h}`** in `pipeline/load_data/load_props.py` is the whole definition of
 open vs close: the same endpoint, called at two times before tip.
 
-**`pipeline/load_data/load_line_history.py` is display-only by construction.** It calls the same endpoint at a
+**`pipeline/load_data/load_line_history.py` is display-first, with one scored use.** It calls the same endpoint at a
 *ladder* of times (`PLANS`) for the top 150 games so a case page can draw a movement curve
 instead of two endpoints. Its rows are tagged `snapshot_role='poll'`, and `pipeline/score/standardize.py`
-selects `'open'`/`'close'` by name — so poll rows are invisible to the score.
+selects `'open'`/`'close'` by name — plus the *earliest* poll as a fallback effective open
+for player-events with no T-12 `'open'` row (see invariant 2). Rows with a true open are
+untouched by polls.
 
 > **Cost model:** one OddsAPI call = **10 credits** and returns *all* players and *all* ~10
 > US books for one event. So per-book and per-player granularity is free; **per-timestamp is
@@ -151,16 +153,17 @@ selects `'open'`/`'close'` by name — so poll rows are invisible to the score.
 
 | function | produces | how |
 |---|---|---|
-| **`add_movement(d)`** | `line_move_pct`, `under_move_pct`, `price_only_move` | open→close as fractional moves. **NaN where no opening line exists** — not zero |
+| **`add_movement(d)`** | `line_move_pct`, `under_move_pct`, `price_only_move` | open→close as fractional moves. **NaN where no opening observation exists** — not zero. The effective open is the T-12 `'open'`, else the earliest `'poll'` (provenance in `open_source`/`open_offset_hours`) |
 | **`add_performance(d)`** | `game_z`, `effort_z`, `shortfall_z` → `performance` | `game_score(d)` is Hollinger Game Score (11 box inputs). `effort_z` averages the nine `EFFORT` stats. Each is z-scored against *his own season* and against his `tier` |
 | **`add_market(d)`** | `p_price`, `p_line`, `mk_line_mv`, `mk_price_mv` → `market` | four components, equal weight, all oriented so a **low raw value scores high** |
-| **`add_motive(d)`** | `motive` | `1 − salary percentile`. **Two-way contracts (no listed salary) score maximum** |
+| **`add_motive(d)`** | `motive` | `0.75·(1 − salary percentile) + 0.25·(instability_career percentile)`, then z-scored. **Two-way contracts (no listed salary) score maximum on the salary term.** Instability (team changes + gap seasons per season of career span, from `player_career`) is NEUTRAL 0.5 where history is missing — absence, not evidence |
 
-The three weight dicts are the model's dials:
+The four weight dicts are the model's dials:
 
 ```python
 PERF_W   = {"game_z": 1/3, "effort_z": 1/3, "shortfall_z": 1/3}
 MARKET_W = {"p_price": .25, "p_line": .25, "line_mv": .25, "price_mv": .25}
+MOTIVE_W = {"salary": .75, "instability": .25}
 BLOCK_W  = {"performance": .45, "market": .30, "motive": .25}
 ```
 
@@ -175,11 +178,11 @@ order** and ranks the survivors.
 15,498  propped player-games
 11,595  1  game_z   top 25% removed      (he had a good game)
  9,660  2  effort_z top 25% removed      (he was more involved than usual)
- 7,346  3  market   bottom 25% removed   (the market leaned over)
- 6,936  4  no upward line move
- 6,033  5  no upward price-only move
- 4,810  6  salary <= $20M or unlisted
- 3,207  7  experience > 2 seasons
+ 7,349  3  market   bottom 25% removed   (the market leaned over)
+ 6,881  4  no upward line move
+ 5,841  5  no upward price-only move
+ 4,630  6  salary <= $20M or unlisted
+ 3,077  7  experience > 2 seasons
 ```
 
 Three things about this block are load-bearing:
@@ -280,9 +283,14 @@ Each of these was a bug once.
 
 1. **Missing ≠ failed.** Cuts use `~(x > 0)`. A row with nothing to test survives. Two-way
    contracts have no salary and are exactly the population the motive axis exists to find.
-2. **Poll rows never reach the score.** `pipeline/score/standardize.py` selects `snapshot_role` by name.
-   Anything you add to `prop_quotes` for display gets a new role, and `verify()` proves the
-   score didn't move.
+2. **Poll rows reach the score ONLY as a fallback opening observation where no 'open'
+   exists; display-only otherwise.** `pipeline/score/standardize.py` selects
+   `snapshot_role` by name and uses the earliest `'poll'` snapshot as the effective open
+   only for player-events with no T-12 `'open'` row (provenance in
+   `player_game_features.open_source` / `open_offset_hours`). Rows that have a true
+   `'open'` must be byte-identical whatever polls exist — no poll predates T-12, and
+   `verify()` proves every `'open'` is used verbatim. Anything you add to `prop_quotes`
+   for display still gets a new role.
 3. **Percentiles come before cuts, never between them.**
 4. **Rank on raw `score`; display `score_100`.**
 5. **Every list query needs a total-order `ORDER BY`,** or Postgres and DuckDB disagree.

@@ -17,6 +17,12 @@ export interface WatchlistRow {
   close_under: number | null;
   salary: number | null;
   has_listed_salary: boolean;
+  // Motive provenance: (career team changes + 2·gap seasons) / (span + 1), and
+  // the gap-season count itself. Optional AND nullable: an older backend omits
+  // the fields entirely, and a player with no career row carries null -- missing
+  // history, not zero. Feeds only the motive display, never a filter.
+  instability_career?: number | null;
+  gap_seasons?: number | null;
   // RAW, z-scale: population-independent, the number to compare across runs.
   score: number;
   // 0-100: a LINEAR RESCALE of `score` (not a percentile -- see severity.ts).
@@ -304,6 +310,23 @@ export interface PlayerFlag {
 
 export function fetchPlayerFlags(playerId: number) {
   return get<{ player: string; rows: PlayerFlag[] }>(`/api/player/${playerId}/flags`);
+}
+
+// One season-stint in a player's career, in career order: two-plus stints in one
+// season are a mid-season move, a league season with no stint at all is a gap
+// season. This is the history the instability rate summarises. A 404 (older
+// backend, or a player with no recorded career) surfaces as the fetch rejecting
+// -- the case view renders nothing for it, never an empty strip.
+export interface CareerStint {
+  season: string;
+  seq: number;
+  team_abbr: string;
+}
+
+export function fetchPlayerCareer(playerId: number) {
+  return get<{ stints: CareerStint[]; first_season: string; last_season: string }>(
+    `/api/player/${playerId}/career`,
+  );
 }
 
 // One cell per game day; the click target is the day's worst composite.
