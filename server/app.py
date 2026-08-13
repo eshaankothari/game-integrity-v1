@@ -30,11 +30,9 @@ from fastapi.middleware.cors import CORSMiddleware
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import config                                          # noqa: E402
-import db                                              # noqa: E402
-import packet                                          # noqa: E402
-import summarize                                       # noqa: E402
-from standardize import BLOCK_W, PERF_W, MARKET_W      # noqa: E402
+from pipeline.core import config, db                              # noqa: E402
+from pipeline.llm_review import packet, summarize                    # noqa: E402
+from pipeline.score.standardize import BLOCK_W, PERF_W, MARKET_W  # noqa: E402
 
 # The three blocks, in the order the UI shows them. Imported rather than copied, so a
 # re-weighting in L5 re-labels the dashboard on next restart with no second edit.
@@ -171,9 +169,11 @@ def _decorate(r):
     # baseline. effort_z kept its name and its meaning.
     r["prod_z"] = r.get("game_z")
 
-    # The 0-100 scale, aliased to the names the UI reads. score_100 is the PERCENTILE of
-    # `score` over all propped games -- "worse than X% of them" -- so 99.0 means 155
-    # games scored higher, not that the game is 99% of some maximum.
+    # The 0-100 scale, aliased to the names the UI reads. score_100 is a LINEAR MIN-MAX
+    # RESCALE of `score` over all propped games, NOT a percentile: 99.0 means the game sits
+    # 99% of the way from the lowest raw score to the highest, which says nothing about how
+    # many games rank above it. Strictly monotone, so it never reorders anything -- but the
+    # gaps are the raw gaps, not equal-sized population slices. `scale_note` says the same.
     r["score_pct100"] = r.get("score_100")
     # `score` is the raw z-scale value, kept for provenance. The UI shows score_100, and
     # `rank` is ordered by score_100 -- so sorting by `score` would produce a list whose

@@ -24,17 +24,18 @@ COPY FROM DATABASE (the one-liner in DuckDB's docs) FAILS on this database: api_
 carries an index type DuckDB cannot bind, and the whole copy aborts. Copying table by
 table avoids that, and lets the skip list above exist at all.
 
-    python to_duckdb.py            # DRY: what it would copy, writes nothing
-    python to_duckdb.py run        # write game_integrity.duckdb
-    python to_duckdb.py run --all  # include the skipped tables too
+    python -m pipeline.tools.to_duckdb            # DRY: what it would copy, writes nothing
+    python -m pipeline.tools.to_duckdb run        # write game_integrity.duckdb
+    python -m pipeline.tools.to_duckdb run --all  # include the skipped tables too
 """
-import pathlib
 import sys
 import time
 
-import config
+from pipeline.core import config
 
-OUT = pathlib.Path("game_integrity.duckdb")
+# Repo root, not the working directory -- the file the README tells people to point
+# GI_DB at has to be in a predictable place regardless of where this was launched.
+OUT = config.ROOT / "game_integrity.duckdb"
 
 # Everything the API, packet.py and summarize.py actually read.
 KEEP = [
@@ -129,8 +130,8 @@ def main(mode="dry", keep_all=False):
     con.close()
 
     print(f"\ncopied {total:,} rows in {time.time()-t0:.1f}s")
-    print(f"-> {OUT}  {OUT.stat().st_size/1e6:.1f} MB")
-    print(f"\nPoint the API at it with:  export GI_DB={OUT}")
+    print(f"-> {OUT.name}  {OUT.stat().st_size/1e6:.1f} MB")
+    print(f"\nPoint the API at it with:  export GI_DB={OUT.name}")
 
 
 if __name__ == "__main__":

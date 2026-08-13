@@ -18,10 +18,10 @@ needs play-by-play (1,230 calls). abs_margin is the cheap proxy -- it says the g
 ended up decided, not when it became decided. With PBP the stats could instead be
 recomputed on competitive minutes only, which is the better version of the same idea.
 
-    python load_context.py            # DRY
-    python load_context.py run        # write
+    python -m pipeline.load_data.load_context            # DRY
+    python -m pipeline.load_data.load_context run        # write
 """
-import db
+from pipeline.core import db
 
 # Arena elevation in feet, keyed by the HOME team. Only Denver (5,280) and Utah
 # (4,226) are high enough to plausibly affect a player physically, but the column is

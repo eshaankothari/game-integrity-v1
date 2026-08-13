@@ -6,7 +6,7 @@
 # Run `make` on its own to list the targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-py setup-ui api ui demo duckdb dump restore check clean
+.PHONY: help setup setup-py setup-ui api ui demo example duckdb dump restore check clean
 
 PY   ?= python3
 DB   ?= game_integrity.duckdb
@@ -50,7 +50,7 @@ demo:  ## API + dashboard together; Ctrl-C stops both
 # --- database --------------------------------------------------------------
 
 duckdb:  ## export Postgres -> a single .duckdb file for handoff
-	$(PY) to_duckdb.py run
+	$(PY) -m pipeline.tools.to_duckdb run
 
 dump:  ## export Postgres -> game_integrity.dump (all 21 tables + constraints)
 	pg_dump $(PGDB) -Fc -f game_integrity.dump
@@ -74,8 +74,11 @@ restore:  ## load game_integrity.dump into a FRESH Postgres database
 	pg_restore -d $(PGDB) --no-owner --no-privileges game_integrity.dump
 	@echo "  restored -> $(PGDB).  Run: make demo"
 
+example:  ## run a short tour of the helpers (no cost, no writes, no network)
+	@$(PY) quickstart.py
+
 check:  ## confirm the database is present and scored
-	@$(PY) -c "import config, db; \
+	@$(PY) -c "from pipeline.core import config, db; \
 	print('backend :', config.BACKEND); \
 	print('shortlist:', db.rows('select count(*) n from player_game_scores where in_shortlist', one=True)['n'], '(expect 3207)')"
 

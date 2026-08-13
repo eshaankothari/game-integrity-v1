@@ -17,15 +17,15 @@ after ~800 credits have been spent.
 Those are NOT resolved by name -- see resolve_name(); guessing would silently attach
 a prop to the wrong person.
 
-    python load_players.py            # DRY
-    python load_players.py run        # write
+    python -m pipeline.load_data.load_players            # DRY
+    python -m pipeline.load_data.load_players run        # write
 """
 import re
 import unicodedata
 
 from nba_api.stats.static import players as static_players
 
-import db
+from pipeline.core import db
 
 _SUFFIX = re.compile(r"\s+(jr|sr|ii|iii|iv|v)$")
 _PUNCT = str.maketrans("", "", ".,'")

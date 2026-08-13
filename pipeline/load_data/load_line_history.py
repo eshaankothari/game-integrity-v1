@@ -6,7 +6,7 @@ endpoints. Written for the case-view graph.
 
 COSMETIC BY CONSTRUCTION. Every row lands with snapshot_role='poll'. standardize.py
 selects `FILTER (WHERE snapshot_role = 'close')` and `'open'` by name, so nothing here
-can reach the score, the blocks or the funnel. Confirm with `python load_line_history.py
+can reach the score, the blocks or the funnel. Confirm with `python -m pipeline.load_data.load_line_history
 --verify`, which re-reads score_100 and fails loudly if a single row moved.
 
   - 'poll' is already permitted by prop_quotes_snapshot_role_check -- no migration.
@@ -20,19 +20,19 @@ COST IS PER (EVENT, TIMESTAMP), NOT PER PLAYER. One call returns every player an
 ~10 US books for that event, so a ladder over N events costs N x rungs x 10 credits
 regardless of how many player-games you are charting.
 
-    python load_line_history.py --plan probe            # DRY: exact credit count
-    python load_line_history.py --plan probe run        # fetch + write
-    python load_line_history.py --plan probe cached     # write only what is on disk, 0 credits
-    python load_line_history.py --verify                # scores untouched?
+    python -m pipeline.load_data.load_line_history --plan probe            # DRY: exact credit count
+    python -m pipeline.load_data.load_line_history --plan probe run        # fetch + write
+    python -m pipeline.load_data.load_line_history --plan probe cached     # write only what is on disk, 0 credits
+    python -m pipeline.load_data.load_line_history --verify                # scores untouched?
 """
 import sys
 from datetime import datetime, timedelta, timezone
 
-import cache
-import config
-import db
-from load_players import make_resolver
-from load_props import FMT, quotes, snapshot
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
+from pipeline.load_data.load_players import make_resolver
+from pipeline.load_data.load_props import FMT, quotes, snapshot
 
 # THE LADDERS, in hours before tip.
 #

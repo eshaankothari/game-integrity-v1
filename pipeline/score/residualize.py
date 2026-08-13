@@ -31,8 +31,8 @@ So points_resid answers "did he score less than context predicts", and minutes_r
 answers "was he on the floor less than the situation explains". Neither absorbs the
 other.
 
-    python residualize.py            # DRY
-    python residualize.py run        # write
+    python -m pipeline.score.residualize            # DRY
+    python -m pipeline.score.residualize run        # write
 """
 import warnings
 
@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 
-import db
+from pipeline.core import db
 
 warnings.filterwarnings("ignore", message=".*SQLAlchemy.*")
 

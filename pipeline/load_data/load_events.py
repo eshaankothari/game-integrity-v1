@@ -21,8 +21,8 @@ Matching is EXACT on both axes -- team ids, and the event's US/Eastern date. v0
 matched loosely (nickname substrings, plus a +/-1 day window for UTC spillover) and
 that silently mis-mapped 6 games league-wide. See `match()` for what went wrong.
 
-    python load_events.py            # DRY: exact credit count, writes nothing
-    python load_events.py run        # fetch missing dates + write
+    python -m pipeline.load_data.load_events            # DRY: exact credit count, writes nothing
+    python -m pipeline.load_data.load_events run        # fetch missing dates + write
 """
 import json
 import sys
@@ -32,9 +32,9 @@ from zoneinfo import ZoneInfo
 import requests
 from nba_api.stats.static import teams as static_teams
 
-import cache
-import config
-import db
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
 
 EVENTS_URL = "https://api.the-odds-api.com/v4/historical/sports/basketball_nba/events"
 ET = ZoneInfo("America/New_York")               # NBA's game_date is the US/Eastern date

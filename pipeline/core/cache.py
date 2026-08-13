@@ -37,8 +37,8 @@ from collections import OrderedDict
 import pandas as pd
 import requests
 
-import config
-import db
+from pipeline.core import config
+from pipeline.core import db
 
 # Free probe: /v4/sports does NOT count against the quota (verified -- the
 # x-requests-used counter does not move across repeated calls), so asking for the
@@ -129,7 +129,7 @@ def _paths(kind, key):
 
 
 def status(kind, key):
-    """Where this key lives WITHOUT reading it: 'v0' | 'v1' | None.
+    """Where this key  lives WITHOUT reading it: 'v0' | 'v1' | None.
 
     The DRY-run primitive -- lets a loader count exactly what it would fetch
     before spending anything.

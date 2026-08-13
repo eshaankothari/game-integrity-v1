@@ -39,16 +39,16 @@ POPULATION -- read this before anything else.
     judged on price and line alone rather than scored as though the movement terms had
     been observed and found neutral.
 
-    python standardize.py           # DRY: report, write nothing
-    python standardize.py run
+    python -m pipeline.score.standardize           # DRY: report, write nothing
+    python -m pipeline.score.standardize run
 """
 import warnings
 
 import numpy as np
 import pandas as pd
 
-import config
-import db
+from pipeline.core import config
+from pipeline.core import db
 
 warnings.filterwarnings("ignore", message=".*SQLAlchemy.*")
 

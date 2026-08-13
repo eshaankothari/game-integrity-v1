@@ -2,8 +2,8 @@
 
 Built as TWO separate commands on purpose:
 
-    python load_pbp.py fetch     slow, network-bound, run overnight
-    python load_pbp.py derive    fast, offline, safe to re-run and refine
+    python -m pipeline.load_data.load_pbp fetch     slow, network-bound, run overnight
+    python -m pipeline.load_data.load_pbp derive    fast, offline, safe to re-run and refine
 
 The split matters. Fetching 1,230 games is the expensive, irreversible part; parsing
 is where the judgement calls live (what counts as garbage time, how an ejection is
@@ -44,8 +44,8 @@ import pandas as pd
 import requests
 from nba_api.stats.endpoints import playbyplayv3
 
-import cache
-import db
+from pipeline.core import cache
+from pipeline.core import db
 
 TIMEOUT = 30
 RETRIES = 3
@@ -177,7 +177,7 @@ def cmd_fetch(workers=WORKERS, limit=None):
     print(f"to fetch         : {len(todo):,}")
     print(f"workers          : {workers}   (1 is deliberate; concurrency throttles)")
     if not todo:
-        print("\nnothing to fetch. Run:  python load_pbp.py derive")
+        print("\nnothing to fetch. Run:  python -m pipeline.load_data.load_pbp derive")
         return
     print(f"est. wall clock  : ~{len(todo) * 2.0 / max(workers,1) / 60:.0f} min "
           f"if unthrottled\n", flush=True)
@@ -192,7 +192,7 @@ def cmd_fetch(workers=WORKERS, limit=None):
     if still:
         print(f"still missing {still:,} -- re-run to resume")
     print(cache.summary())
-    print("\nNext:  python load_pbp.py derive")
+    print("\nNext:  python -m pipeline.load_data.load_pbp derive")
 
 
 # ===========================================================================
@@ -358,7 +358,7 @@ def cmd_derive(dry=True):
 
         print(f"cached play-by-play games parsed : {parsed:,} of {len(gids):,}")
         if not parsed:
-            sys.exit("!! nothing cached. Run:  python load_pbp.py fetch")
+            sys.exit("!! nothing cached. Run:  python -m pipeline.load_data.load_pbp fetch")
         gt = sum(1 for g in gctx_rows if g["garbage_start_sec"] is not None)
         ej = sum(1 for p in prows if p["ejected"])
         print(f"  games reaching garbage time    : {gt:,} "

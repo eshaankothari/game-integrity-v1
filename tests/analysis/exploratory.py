@@ -5,7 +5,7 @@ logistic regressions. Nothing here is transcribed; every number is recomputed.
 """
 import warnings, pathlib, sys
 warnings.filterwarnings("ignore")
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np, pandas as pd, db

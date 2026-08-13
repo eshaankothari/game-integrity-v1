@@ -34,12 +34,12 @@ DNPs are kept. `minutes IS NULL` with has_traditional TRUE means the player was 
 the roster and did not appear. L5 must exclude them from the baseline, or a pile of
 zeros drags every league mean down.
 
-    python load_boxscores.py                          # DRY: what it would fetch
-    python load_boxscores.py cached                   # build from cache only, 0 calls
-    python load_boxscores.py run                      # fetch + write
-    python load_boxscores.py run --date 2023-11-08    # one game day
-    python load_boxscores.py run --workers 1          # tune concurrency
-    python load_boxscores.py run force                # skip the preflight probe
+    python -m pipeline.load_data.load_boxscores                          # DRY: what it would fetch
+    python -m pipeline.load_data.load_boxscores cached                   # build from cache only, 0 calls
+    python -m pipeline.load_data.load_boxscores run                      # fetch + write
+    python -m pipeline.load_data.load_boxscores run --date 2023-11-08    # one game day
+    python -m pipeline.load_data.load_boxscores run --workers 1          # tune concurrency
+    python -m pipeline.load_data.load_boxscores run force                # skip the preflight probe
 """
 import sys
 import time
@@ -50,8 +50,8 @@ import requests
 from nba_api.stats.endpoints import (boxscoreadvancedv3, boxscorehustlev2,
                                      boxscoreplayertrackv3, boxscoretraditionalv3)
 
-import cache
-import db
+from pipeline.core import cache
+from pipeline.core import db
 
 TIMEOUT = 20
 RETRIES = 3

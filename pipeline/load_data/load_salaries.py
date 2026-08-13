@@ -22,8 +22,8 @@ imputed or dropped, so downstream can treat "not listed" as its own bucket.
 TRADED PLAYERS appear on both teams' pages. bbref shows the full-season cap hit on
 each, so the rows agree; we keep the MAX and record n_teams so a trade stays visible.
 
-    python load_salaries.py            # DRY
-    python load_salaries.py run        # 30 calls, free
+    python -m pipeline.load_data.load_salaries            # DRY
+    python -m pipeline.load_data.load_salaries run        # 30 calls, free
 """
 import html
 import re
@@ -33,10 +33,10 @@ import time
 import pandas as pd
 import requests
 
-import cache
-import config
-import db
-from load_players import ascii_name, depunct_name, desuffix_name, make_resolver
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
+from pipeline.load_data.load_players import ascii_name, depunct_name, desuffix_name, make_resolver
 
 URL = "https://www.basketball-reference.com/teams/{abbr}/{year}.html"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

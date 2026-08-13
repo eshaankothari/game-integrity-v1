@@ -251,7 +251,7 @@ CREATE INDEX player_games_incomplete_idx ON player_games (game_id)
 --                          `in_shortlist`, and `cut_failed` -- the first cut that
 --                          eliminated it, so the UI can explain an absence.
 --
--- Run `python standardize.py run && python export_candidates.py` to build all three.
+-- Run `python -m pipeline.score.standardize run && python -m pipeline.score.export_candidates` to build all three.
 -- L5 drops and rebuilds player_game_z if it still carries `baseline_mode`, the primary
 -- key of the retired four-baseline sweep.
 

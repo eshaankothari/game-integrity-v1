@@ -22,8 +22,8 @@ every snapshot offset is measured from it.
 stats.nba.com stalls intermittently and blocks datacenter/VPN IPs -- run on a
 residential connection. The response caches, so this is a one-time cost.
 
-    python load_games.py            # DRY
-    python load_games.py run        # fetch (if uncached) + write
+    python -m pipeline.load_data.load_games            # DRY
+    python -m pipeline.load_data.load_games run        # fetch (if uncached) + write
 """
 import sys
 import time
@@ -32,9 +32,9 @@ import pandas as pd
 import requests
 from nba_api.stats.endpoints import leaguegamefinder
 
-import cache
-import config
-import db
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
 
 # Fail fast. A healthy stats.nba.com answers in 1-3s, so a 20s timeout only ever
 # waits on a socket that is already dead. Retries exist for INTERMITTENT stalls

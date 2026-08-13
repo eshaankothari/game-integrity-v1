@@ -20,19 +20,19 @@ Opening lines are deliberately NOT fetched yet. They are `open` ROWS in this sam
 table, not extra columns, so adding them later is an INSERT and nothing downstream
 changes. Historical snapshots never expire, so deferring costs nothing.
 
-    python load_props.py             # DRY: exact credit count, writes nothing
-    python load_props.py cached      # write ONLY what is already cached, 0 credits
-    python load_props.py run         # fetch missing closes + write
+    python -m pipeline.load_data.load_props             # DRY: exact credit count, writes nothing
+    python -m pipeline.load_data.load_props cached      # write ONLY what is already cached, 0 credits
+    python -m pipeline.load_data.load_props run         # fetch missing closes + write
 """
 import sys
 from datetime import datetime, timedelta, timezone
 
 import requests
 
-import cache
-import config
-import db
-from load_players import make_resolver
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
+from pipeline.load_data.load_players import make_resolver
 
 ODDS_URL = ("https://api.the-odds-api.com/v4/historical/sports/basketball_nba/"
             "events/{event_id}/odds")

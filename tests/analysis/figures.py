@@ -5,11 +5,11 @@ nothing here is transcribed from a doc, because the docs have drifted from the c
 """
 import warnings, pathlib, sys
 warnings.filterwarnings("ignore")
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np, pandas as pd, db
-from standardize import BLOCK_W, PERF_W
+from pipeline.score.standardize import BLOCK_W, PERF_W
 
 OUT = pathlib.Path(__file__).resolve().parent / "figures"; OUT.mkdir(exist_ok=True)
 plt.rcParams.update({"figure.dpi": 150, "font.size": 9, "axes.grid": True,

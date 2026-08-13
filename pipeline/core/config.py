@@ -9,7 +9,10 @@ REUSE the v0 caches on disk, so OddsAPI/nba calls already paid for are never re-
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent                     # game-integrity-v1/
+# pipeline/core/config.py -> pipeline/core -> gi -> the repository root. If this file ever moves
+# again, this is the ONE line in the backend that has to move with it: cache/, out/
+# and game_integrity.duckdb are all resolved from it.
+ROOT = Path(__file__).resolve().parents[2]                 # game-integrity-v1/
 V0 = Path("/Users/eshaankothari/Desktop/Game Integrity Product v0")   # source of paid caches only
 
 # --- paid caches (reused in place; we read, never rewrite v0) ---
@@ -65,7 +68,7 @@ LLM_PROVIDER = os.environ.get(
 #
 # THESE GO STALE. gemini-2.5-flash-lite was the default here until the API answered
 # "no longer available to new users" -- a model name is not a constant. Run
-# `python review.py --models` for what your key can actually call, and check the
+# `python -m pipeline.llm_review.review --models` for what your key can actually call, and check the
 # provider's pricing page before repeating any number below to anyone.
 LLM_PRICES = {
     "gemini-2.5-flash-lite":     (0.10, 0.40),

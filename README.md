@@ -1,11 +1,13 @@
 # Game Integrity — NBA player-prop screening
 
-Finds NBA player-games where a player may have deliberately underperformed against his
-points prop, for the 2023-24 regular season.
 
-The output is a **ranked shortlist for human review**, not a verdict. Nothing here
-establishes intent; it establishes that a game is unusual on several independent axes at
-once. Full statistical reasoning lives in [METHODOLOGY.md](METHODOLOGY.md).
+Over the course of the past few weeks and after extensive research, experiments, and training, I have built a model and platform that can help detect NBA player-games with suspected anomalous activity with respect to unders on prop bet markets.
+
+| doc | answers |
+|---|---|
+| this file | how to install it and run it |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | **what every file and key function does** — start here to change something |
+| [METHODOLOGY.md](METHODOLOGY.md) | why the statistics are what they are |
 
 ```
 32,385 player-games  ->  15,498 with a betting line  ->  3,207 shortlisted  ->  ranked
@@ -103,10 +105,30 @@ each.
 
 ---
 
-## How the data flows
+## How the data flows - read ARCHITECTURE.md FOR MORE
 
 Each layer reads what the layer above it wrote. Nothing skips ahead, and every layer is
 **idempotent** — re-running fills gaps instead of duplicating.
+
+The backend is one package, `pipeline/`, with a subpackage per layer:
+
+```
+pipeline/core/               config · db · cache · schema.sql   shared by everything
+pipeline/load_data/  L0-L4   the 13 loaders
+pipeline/score/      L5-L6   standardize · export_candidates
+pipeline/llm_review/ L8-L9   packet · summarize · review
+pipeline/tools/              to_duckdb
+server/              L7      read-only FastAPI
+frontend/                    React dashboard
+```
+
+**Run any of them as a module, from the repository root:**
+
+```bash
+python -m pipeline.load_data.load_props        # DRY: reports what it would do, writes nothing
+python -m pipeline.load_data.load_props run    # actually executes
+python -m pipeline.score.standardize run
+```
 
 ```
         NBA API            OddsAPI          basketball-reference
@@ -117,34 +139,36 @@ Each layer reads what the layer above it wrote. Nothing skips ahead, and every l
            |                  |                      |
            +--------- L4 box scores + play-by-play ---+
                               |
-                     L5 standardize.py      the three scoring blocks
+              L5 pipeline/score/standardize        the three scoring blocks
                               |
-                     L6 export_candidates   cuts, then rank
+              L6 pipeline/score/export_candidates  cuts, then rank
                               |
-                     L7 server/app.py       read-only API
+              L7 server/app.py                     read-only API
                               |
-                        frontend/           React dashboard
+                 frontend/                         React dashboard
 ```
+
+For what every file and key function does, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
 ### L0–L1 · Who and when *(cheap, run once)*
 
 | file | writes | what it does |
 |---|---|---|
-| `load_teams.py` | `teams` | The 30 NBA teams. Zero network calls — `nba_api` ships a static table. |
-| `load_games.py` | `games` | The season's game spine. One API call for all 1,230 games. |
-| `load_players.py` | `players` | Every player who has ever played, plus nicknames. Run once a season. |
-| `load_rosters.py` | `players` | *Enriches* existing rows: position, height, weight, birth date, experience. |
-| `load_salaries.py` | `player_salaries` | Scrapes each team's salary table, resolves names to `player_id`, stores rank and percentile. 30 free calls. |
+| `pipeline/load_data/load_teams.py` | `teams` | The 30 NBA teams. Zero network calls — `nba_api` ships a static table. |
+| `pipeline/load_data/load_games.py` | `games` | The season's game spine. One API call for all 1,230 games. |
+| `pipeline/load_data/load_players.py` | `players` | Every player who has ever played, plus nicknames. Run once a season. |
+| `pipeline/load_data/load_rosters.py` | `players` | *Enriches* existing rows: position, height, weight, birth date, experience. |
+| `pipeline/load_data/load_salaries.py` | `player_salaries` | Scrapes each team's salary table, resolves names to `player_id`, stores rank and percentile. 30 free calls. |
 
 ### L2–L3 · The market *(this is where money is spent)*
 
 | file | writes | what it does |
 |---|---|---|
-| `load_events.py` | `odds_events` | Maps each game to its OddsAPI `event_id`. 1 credit each. |
-| `load_props.py` | `prop_quotes` | Points props from FanDuel, DraftKings and Caesars — line, over price, under price — at tip-off (`close`) and T‑12h (`open`). **10 credits per call.** |
-| `load_line_history.py` | `prop_quotes` | The same endpoint at a *ladder* of times before tip, so a game has a movement **curve** rather than two endpoints. Rows are tagged `snapshot_role='poll'` and are **invisible to the score** — display only. |
+| `pipeline/load_data/load_events.py` | `odds_events` | Maps each game to its OddsAPI `event_id`. 1 credit each. |
+| `pipeline/load_data/load_props.py` | `prop_quotes` | Points props from FanDuel, DraftKings and Caesars — line, over price, under price — at tip-off (`close`) and T‑12h (`open`). **10 credits per call.** |
+| `pipeline/load_data/load_line_history.py` | `prop_quotes` | The same endpoint at a *ladder* of times before tip, so a game has a movement **curve** rather than two endpoints. Rows are tagged `snapshot_role='poll'` and are **invisible to the score** — display only. |
 
-> Every network call in the project goes through `cache.py`. It checks the cache before
+> Every network call in the project goes through `pipeline/core/cache.py`. It checks the cache before
 > calling and writes every response back, so a re-run costs nothing. `db.log_call()`
 > records the real credit cost from the API's own response headers.
 
@@ -152,17 +176,17 @@ Each layer reads what the layer above it wrote. Nothing skips ahead, and every l
 
 | file | writes | what it does |
 |---|---|---|
-| `load_boxscores.py` | `player_games` | Merges four NBA box-score endpoints (traditional, advanced, hustle, tracking) into one row per player-game. |
-| `load_pbp.py` | `player_game_pbp`, `game_pbp_context` | Play-by-play: substitution stints, ejections, garbage-time split. Two commands — `fetch` (slow, network) and `derive` (fast, offline). |
-| `load_pbp_events.py` | `player_game_events` | The individual pbp events for every propped player-game — 422,884 rows — so the shot chart and play timeline read the **database** rather than a cache file. Cache only, 0 API calls. |
-| `load_context.py` | `game_context` | Rest days, back-to-backs, altitude, pace, final margin — the circumstances that legitimately depress production. No API calls. |
-| **`standardize.py`** | `player_game_features`, `player_game_z` | **The scoring model.** Turns a player-game into the three blocks below. |
+| `pipeline/load_data/load_boxscores.py` | `player_games` | Merges four NBA box-score endpoints (traditional, advanced, hustle, tracking) into one row per player-game. |
+| `pipeline/load_data/load_pbp.py` | `player_game_pbp`, `game_pbp_context` | Play-by-play: substitution stints, ejections, garbage-time split. Two commands — `fetch` (slow, network) and `derive` (fast, offline). |
+| `pipeline/load_data/load_pbp_events.py` | `player_game_events` | The individual pbp events for every propped player-game — 422,884 rows — so the shot chart and play timeline read the **database** rather than a cache file. Cache only, 0 API calls. |
+| `pipeline/load_data/load_context.py` | `game_context` | Rest days, back-to-backs, altitude, pace, final margin — the circumstances that legitimately depress production. No API calls. |
+| **`pipeline/score/standardize.py`** | `player_game_features`, `player_game_z` | **The scoring model.** Turns a player-game into the three blocks below. |
 
 ### L6–L7 · Rank and serve
 
 | file | writes | what it does |
 |---|---|---|
-| `export_candidates.py` | `player_game_scores` | Applies seven cuts, then ranks the survivors. Keeps **all 15,498 rows** with `in_shortlist` and `cut_failed`, so the UI can answer *"why isn't this game here?"* |
+| `pipeline/score/export_candidates.py` | `player_game_scores` | Applies seven cuts, then ranks the survivors. Keeps **all 15,498 rows** with `in_shortlist` and `cut_failed`, so the UI can answer *"why isn't this game here?"* |
 | `server/app.py` | — | Read-only FastAPI over the three tables. Postgres is the only source; no CSVs, so it can never serve a stale run. |
 | `frontend/` | — | React dashboard: ranked list, case file, season calendar, 3D anomaly cloud. |
 
@@ -170,18 +194,18 @@ Each layer reads what the layer above it wrote. Nothing skips ahead, and every l
 
 | file | what it does |
 |---|---|
-| `packet.py` | Gathers everything known about one player-game into a single JSON evidence packet (~3,300 tokens). |
-| `summarize.py` | Plain-English summary of a packet using **rules, not a model**. Free, instant, and cannot invent a claim the data doesn't support. |
-| `review.py` | Optional LLM reviewer (Gemini or Anthropic) over the same packet. It reads and explains; **it never scores or ranks.** |
+| `pipeline/llm_review/packet.py` | Gathers everything known about one player-game into a single JSON evidence packet (~3,300 tokens). |
+| `pipeline/llm_review/summarize.py` | Plain-English summary of a packet using **rules, not a model**. Free, instant, and cannot invent a claim the data doesn't support. |
+| `pipeline/llm_review/review.py` | Optional LLM reviewer (Gemini or Anthropic) over the same packet. It reads and explains; **it never scores or ranks.** |
 
 ### Shared plumbing
 
 | file | what it does |
 |---|---|
-| `config.py` | Paths, season, book, API keys, model prices. Reads `.env`. |
-| `db.py` | Database access. Every write is an upsert; every loader is **dry by default** — pass `run` to actually execute. |
-| `cache.py` | The one place the project touches the network. |
-| `schema.sql` | Every table definition. |
+| `pipeline/core/config.py` | Paths, season, book, API keys, model prices. Reads `.env`. |
+| `pipeline/core/db.py` | Database access. Every write is an upsert; every loader is **dry by default** — pass `run` to actually execute. |
+| `pipeline/core/cache.py` | The one place the project touches the network. |
+| `pipeline/core/schema.sql` | Every table definition. |
 
 ---
 
@@ -235,7 +259,7 @@ Split by *what they mean*, so re-standardising never rewrites the evidence it ca
 ## Conventions worth knowing
 
 - **Dry by default.** Every loader reports what it *would* fetch and writes nothing until
-  you pass `run`. `python load_props.py` is safe; `python load_props.py run` spends money.
+  you pass `run`. `python -m pipeline.load_data.load_props` is safe; `python -m pipeline.load_data.load_props run` spends money.
 - **Missing ≠ failed.** Cuts use `~(x > 0)` rather than `x <= 0`, so a row with nothing to
   test survives instead of being deleted. Two-way contracts have no published salary, and
   they are exactly the population the motive axis exists to find.
@@ -256,8 +280,8 @@ Split by *what they mean*, so re-standardising never rewrites the evidence it ca
 
 ## Not part of the flow
 
-`residualize.py` (context-adjusted residuals) was built and **rejected** — context explains
+`pipeline/score/residualize.py` (context-adjusted residuals) was built and **rejected** — context explains
 only 1–23% of variance and `corr(score, score_residualized) = 0.995`. It is kept because
-`standardize.py` still uses one column from it, the role `tier`. `load_line_pulls.py`
+`pipeline/score/standardize.py` still uses one column from it, the role `tier`. `pipeline/load_data/load_line_pulls.py`
 detects withdrawn lines and has not been run. `tests/` holds exploratory work whose
 conclusions are recorded in METHODOLOGY.md.

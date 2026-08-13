@@ -58,19 +58,21 @@ WHAT IS DELIBERATELY NOT GATED.
     LOW MINUTES. The strongest benign explanation AND a plausible signature of the thing
     being looked for. Nothing in the data separates them, so it stays evidence.
 
-    python standardize.py run && python export_candidates.py
+    python -m pipeline.score.standardize run && python -m pipeline.score.export_candidates
 """
-import pathlib
 import warnings
 
 import numpy as np
 import pandas as pd
 
-import db
+from pipeline.core import config, db
 
 warnings.filterwarnings("ignore", message=".*SQLAlchemy.*")
 
-OUT = pathlib.Path("out/candidates.csv")
+# Anchored to the repo root, not the working directory: this is a module now
+# (`python -m pipeline.score.export_candidates`), so it must land in the same place
+# whichever directory it is launched from.
+OUT = config.ROOT / "out" / "candidates.csv"
 
 TRIM = 0.25
 MAX_SALARY = 20_000_000

@@ -39,8 +39,8 @@ WHAT IS DELIBERATELY LEFT OUT
     Set blind=False only for a briefing that is meant to restate a conclusion, never for
     a classification or a devil's-advocate pass.
 
-    python packet.py 1629007 2024-03-20          # print one packet
-    python packet.py --measure 200               # size distribution over the top N
+    python -m pipeline.llm_review.packet 1629007 2024-03-20          # print one packet
+    python -m pipeline.llm_review.packet --measure 200               # size distribution over the top N
 """
 import argparse
 import json
@@ -49,8 +49,8 @@ import warnings
 
 import pandas as pd
 
-import config
-import db
+from pipeline.core import config
+from pipeline.core import db
 
 warnings.filterwarnings("ignore", message=".*SQLAlchemy.*")
 

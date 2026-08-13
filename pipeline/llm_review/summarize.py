@@ -20,13 +20,13 @@ DATA supports, using the same taxonomy as review.py so the two are directly comp
 and `none_found` when it supports none. That is a statement about the evidence, not
 about the player.
 
-    python summarize.py 1629007 2024-03-20
-    python summarize.py --top 20
+    python -m pipeline.llm_review.summarize 1629007 2024-03-20
+    python -m pipeline.llm_review.summarize --top 20
 """
 import argparse
 import warnings
 
-import packet
+from pipeline.llm_review import packet
 
 warnings.filterwarnings("ignore", message=".*SQLAlchemy.*")
 

@@ -29,8 +29,8 @@ from v0's laddered pulls. No new call is made or needed; this is re-reading what
 on disk. Events with a single snapshot get no row -- one observation cannot show a
 change, and recording them as 'not pulled' would be a false negative.
 
-    python load_line_pulls.py            # DRY
-    python load_line_pulls.py run        # write
+    python -m pipeline.load_data.load_line_pulls            # DRY
+    python -m pipeline.load_data.load_line_pulls run        # write
 """
 import glob
 import json
@@ -38,9 +38,9 @@ import re
 import sys
 from collections import defaultdict
 
-import config
-import db
-from load_players import make_resolver
+from pipeline.core import config
+from pipeline.core import db
+from pipeline.load_data.load_players import make_resolver
 
 NAME_RE = re.compile(r"([0-9a-f]{32})_(\d{4}-\d{2}-\d{2}T\d{6}Z)_player_points_([a-zA-Z]+)_")
 

@@ -22,8 +22,8 @@ TWO LIMITATIONS, both accepted deliberately:
     roster at all, so some `position` values stay NULL. L5 must tolerate that
     rather than assume full coverage.
 
-    python load_rosters.py            # DRY
-    python load_rosters.py run        # 30 calls, free
+    python -m pipeline.load_data.load_rosters            # DRY
+    python -m pipeline.load_data.load_rosters run        # 30 calls, free
 """
 import sys
 import time
@@ -32,9 +32,9 @@ import pandas as pd
 import requests
 from nba_api.stats.endpoints import commonteamroster
 
-import cache
-import config
-import db
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
 
 TIMEOUT = 20
 RETRIES = 3

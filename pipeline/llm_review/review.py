@@ -35,9 +35,9 @@ costs nothing and editing the prompt is a miss rather than a stale hit.
     LLM_MODEL defaults to gemini-2.5-flash-lite. Set LLM_MODEL to any Claude or Gemini
     name and the provider follows automatically.
 
-    python review.py --dry 5          # build prompts, price them, call nothing
-    python review.py --top 200        # review the top 200 shortlisted games
-    python review.py --player 1629007 --date 2024-03-20
+    python -m pipeline.llm_review.review --dry 5          # build prompts, price them, call nothing
+    python -m pipeline.llm_review.review --top 200        # review the top 200 shortlisted games
+    python -m pipeline.llm_review.review --player 1629007 --date 2024-03-20
 """
 import argparse
 import json
@@ -48,10 +48,10 @@ import warnings
 import pandas as pd
 import requests
 
-import cache
-import config
-import db
-import packet
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
+from pipeline.llm_review import packet
 
 warnings.filterwarnings("ignore", message=".*SQLAlchemy.*")
 

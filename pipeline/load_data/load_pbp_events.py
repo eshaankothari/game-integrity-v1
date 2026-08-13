@@ -18,16 +18,16 @@ row is a row nobody can see.
 COLUMNS: exactly the fifteen the two endpoints read, no more. The raw CSVs stay in the
 cache for anything that later wants the rest.
 
-    python load_pbp_events.py          # DRY: what it would write
-    python load_pbp_events.py run      # write
+    python -m pipeline.load_data.load_pbp_events          # DRY: what it would write
+    python -m pipeline.load_data.load_pbp_events run      # write
 """
 import sys
 
 import pandas as pd
 
-import cache
-import config
-import db
+from pipeline.core import cache
+from pipeline.core import config
+from pipeline.core import db
 
 DDL = """
 CREATE TABLE IF NOT EXISTS player_game_events (

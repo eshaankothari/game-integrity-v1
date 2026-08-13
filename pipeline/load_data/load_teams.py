@@ -7,12 +7,12 @@ ZERO network calls -- nba_api ships a static team table in the package. This is
 purely a local lookup, and it is what lets NBA's 'MIL' meet OddsAPI's
 'Milwaukee Bucks': the nickname is the join key the event matcher uses at L2.
 
-    python load_teams.py            # DRY
-    python load_teams.py run        # write
+    python -m pipeline.load_data.load_teams            # DRY
+    python -m pipeline.load_data.load_teams run        # write
 """
 from nba_api.stats.static import teams as static_teams
 
-import db
+from pipeline.core import db
 
 def build():
     """Static team table -> rows for `teams`."""

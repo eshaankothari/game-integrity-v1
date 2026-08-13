@@ -19,7 +19,7 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-import config
+from pipeline.core import config
 
 
 @contextmanager
@@ -203,8 +203,8 @@ def log_call(conn, *, api, endpoint, params=None, http_status=None, cache_hit,
 def scope(argv=None):
     """Optional single-day / single-game scope -> (game_date, game_id), None = no filter.
 
-        python load_props.py run --date 2024-01-15     one game day
-        python load_props.py run --game 0022300427     one game
+        python -m pipeline.load_data.load_props run --date 2024-01-15     one game day
+        python -m pipeline.load_data.load_props run --game 0022300427     one game
 
     Every layer from L2 down is driven by what is in the tables rather than by a
     season constant, so narrowing the query is all it takes to run the identical

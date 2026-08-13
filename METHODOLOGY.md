@@ -402,7 +402,7 @@ tests/analysis/             figures.py and exploratory.py regenerate every numbe
 ```
 
 L7 queries Postgres only — no CSV reads, so the dashboard can never serve a stale run —
-and imports the weights from `standardize.py` rather than copying them, so a re-weighting
+and imports the weights from `pipeline/score/standardize.py` rather than copying them, so a re-weighting
 re-labels the UI on restart. Filtering, sorting and pagination are done in SQL.
 
 **Three tables, one row per player-game each, split by what they mean.** Raw values are
@@ -435,14 +435,14 @@ cut_failed breakdown            n
 4  no upward line move         410
 ```
 
-L5 owns the weights. `tests/experiments/weight_audit.py` reads them out of `standardize.py` by
+L5 owns the weights. `tests/experiments/weight_audit.py` reads them out of `pipeline/score/standardize.py` by
 AST rather than copying them, so the audit cannot silently disagree with the pipeline it
 is auditing.
 
 Run order:
 
 ```
-python standardize.py run && python export_candidates.py
+python -m pipeline.score.standardize run && python -m pipeline.score.export_candidates
 ```
 
 **Verification L6 prints on every run:** `order inversions vs the ungated ranking: 0`.
