@@ -6,7 +6,7 @@
 # Run `make` on its own to list the targets.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-py setup-ui api ui demo example duckdb dump restore check clean
+.PHONY: help setup setup-py setup-ui api ui demo example duckdb csv dump restore check clean
 
 PY   ?= python3
 DB   ?= game_integrity.duckdb
@@ -51,6 +51,9 @@ demo:  ## API + dashboard together; Ctrl-C stops both
 
 duckdb:  ## export Postgres -> a single .duckdb file for handoff
 	$(PY) -m pipeline.tools.to_duckdb run
+
+csv:  ## export -> data/*.csv, so the demo can run with no database at all
+	$(PY) -m pipeline.tools.to_csv run
 
 dump:  ## export Postgres -> game_integrity.dump (all 21 tables + constraints)
 	pg_dump $(PGDB) -Fc -f game_integrity.dump

@@ -123,20 +123,27 @@ def _num(v):
 
 def build(player_id, game_date=None, game_id=None, blind=True, pbp_mode="own+subs"):
     """One packet. `blind` omits the score, rank and blocks -- see the module docstring."""
-    with db.connect() as conn:
-        if game_id is None:
-            gid = pd.read_sql(
-                "SELECT game_id FROM player_game_scores WHERE player_id=%(p)s "
-                "AND game_date=%(d)s", conn, params={"p": player_id, "d": game_date})
-            if gid.empty:
-                raise SystemExit(f"no propped game for player {player_id} on {game_date}")
-            game_id = str(gid.game_id.iloc[0])
-        r = pd.read_sql(SQL, conn, params={"pid": player_id, "gid": game_id,
-                                           "season": config.SEASON})
-        if r.empty:
-            raise SystemExit(f"no packet for {player_id} / {game_id}")
-        r = r.iloc[0]
-        base = pd.read_sql(BASE_SQL, conn, params={"pid": player_id}).iloc[0]
+    # db.rows(), NOT db.connect() + pd.read_sql. connect() is psycopg, so building a
+    # packet used to require Postgres -- and the case endpoint calls this to produce its
+    # plain-English summary. On a machine with no Postgres (the whole point of the DuckDB
+    # and CSV exports) the endpoint still returned 200, but with summary: null and
+    # summary_source: "unavailable (OperationalError)". It degraded quietly, so it looked
+    # like it worked. db.rows() speaks all three backends and the SQL below is unchanged.
+    #
+    # pd.Series keeps the attribute access (r.player, r.game_date) the rest of this
+    # function is written against, so nothing downstream had to change.
+    if game_id is None:
+        gid = db.rows("SELECT game_id FROM player_game_scores WHERE player_id=%(p)s "
+                      "AND game_date=%(d)s", {"p": player_id, "d": game_date}, one=True)
+        if not gid:
+            raise SystemExit(f"no propped game for player {player_id} on {game_date}")
+        game_id = str(gid["game_id"])
+    row = db.rows(SQL, {"pid": player_id, "gid": game_id, "season": config.SEASON},
+                  one=True)
+    if not row:
+        raise SystemExit(f"no packet for {player_id} / {game_id}")
+    r = pd.Series(row)
+    base = pd.Series(db.rows(BASE_SQL, {"pid": player_id}, one=True))
 
     p = {
         "identity": {
@@ -255,11 +262,9 @@ def main():
     a = ap.parse_args()
 
     if a.measure:
-        with db.connect() as conn:
-            t = pd.read_sql("""SELECT player_id, game_id, player, minutes
-                                 FROM player_game_scores WHERE in_shortlist
-                                ORDER BY rank LIMIT %(n)s""",
-                            conn, params={"n": a.measure})
+        t = pd.DataFrame(db.rows("""SELECT player_id, game_id, player, minutes
+                                      FROM player_game_scores WHERE in_shortlist
+                                     ORDER BY rank LIMIT %(n)s""", {"n": a.measure}))
         sizes = []
         for _, x in t.iterrows():
             try:

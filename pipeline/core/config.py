@@ -95,12 +95,39 @@ BOOK = "fanduel"                                           # ...and prefer this 
 # --- database ---
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql:///game_integrity_v1")
 
-# TWO BACKENDS, POSTGRES BY DEFAULT.
+# THREE READ BACKENDS, POSTGRES BY DEFAULT. The WRITE path is always Postgres.
 #
-# Postgres is the source of truth: every loader writes to it and the full 21-table
-# history lives there. DuckDB is a read-only EXPORT of the scored tables (see
-# to_duckdb.py) so the dashboard can be handed to someone without a database server.
+#   postgres   the source of truth -- every loader writes here, all 21 tables
+#   duckdb     a read-only export of the 17 scored tables, one file, no server
+#   csv        the same 17 tables as plain text files, no database at all
 #
-# Setting GI_DB to a .duckdb path switches the API over. Unset, nothing changes.
+# The last two are EXPORTS, produced by pipeline/tools/to_duckdb.py and to_csv.py.
+# They exist so the dashboard can be handed to someone who has neither a Postgres
+# server nor a reason to install one. Nothing in the pipeline reads them.
+#
+# GI_DB picks the backend by shape, so there is no second switch to forget:
+#
+#   unset                        -> postgres
+#   GI_DB=game_integrity.duckdb  -> duckdb   (a .duckdb file)
+#   GI_DB=data                   -> csv      (a directory of .csv)
 GI_DB = os.environ.get("GI_DB")
-BACKEND = "duckdb" if (GI_DB or "").endswith(".duckdb") else "postgres"
+
+
+def _backend(gi_db):
+    if not gi_db:
+        return "postgres"
+    if gi_db.endswith(".duckdb"):
+        return "duckdb"
+    p = Path(gi_db)
+    if not p.is_absolute():
+        p = ROOT / p
+    if p.is_dir() or gi_db.endswith("/"):
+        return "csv"
+    return "postgres"
+
+
+BACKEND = _backend(GI_DB)
+
+# Where the CSV export lives, as an absolute path. None unless BACKEND == 'csv'.
+CSV_DIR = (Path(GI_DB) if GI_DB and Path(GI_DB).is_absolute() else ROOT / (GI_DB or "")) \
+          if BACKEND == "csv" else None

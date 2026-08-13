@@ -60,11 +60,12 @@ The database ships already scored; keys are only for re-running ingest, which is
 | `make restore` | load `game_integrity.dump` into a Postgres database |
 | `make dump` | export Postgres → `game_integrity.dump` (all 22 tables) |
 | `make duckdb` | export Postgres → `game_integrity.duckdb` (dashboard tables) |
+| `make csv` | export → `data/*.csv`, then `GI_DB=data make demo` — no database at all |
 
 **Check it worked:** `GI_DB=game_integrity.duckdb make check` prints `shortlist: 3207`,
 and the landing page reports **15,494 player-games**.
 
-## Two database options - Postgres or Duckdb
+## Three ways to hold the data - Postgres, DuckDB or CSV
 
 The API reads either backend — same code, same responses, verified endpoint by endpoint.
 
@@ -92,20 +93,34 @@ make demo           # GI_DB unset, so this is Postgres
 Restore under another name with `PGDB=your_name make restore`, or point at a server you
 already have with `DATABASE_URL=postgresql:///your_db make demo`.
 
-| | `game_integrity.duckdb` | `game_integrity.dump` |
-|---|---|---|
-| size | 33 MB | 17 MB |
-| needs a server | no | yes |
-| tables | 17 — what the dashboard reads | **22 — everything** |
-| constraints / indexes | lookup indexes only | **150 constraints, 44 indexes** |
-| can re-run the pipeline | no | **yes** |
+**CSV — no database at all.** If you want to *read* the numbers rather than run a server,
+`make csv` writes the same 17 tables to `data/*.csv`. The API then queries those files
+directly, and every endpoint returns byte-identical results:
 
-Both are regenerated from a live Postgres: `make dump` and `make duckdb`, a second or two
-each.
+```bash
+make csv                 # ~2s, writes data/ (102 MB, gitignored)
+GI_DB=data make demo     # the dashboard, off plain text files
+```
+
+It works with no Postgres — `make csv` falls back to the committed `.duckdb` — so a fresh
+clone can produce it. DuckDB is still the query engine; the CSVs are just the storage.
+The first request pays ~2s to load them into memory, then it is as fast as any backend.
+
+| | `game_integrity.duckdb` | `game_integrity.dump` | `data/*.csv` |
+|---|---|---|---|
+| size | 33 MB | 17 MB | 102 MB |
+| needs a server | no | yes | no |
+| in the repo | **yes** | **yes** | no — `make csv` |
+| tables | 17 — what the dashboard reads | **22 — everything** | 17 |
+| constraints / indexes | lookup indexes only | **150 constraints, 44 indexes** | none |
+| can re-run the pipeline | no | **yes** | no |
+| readable without code | no | no | **yes** |
+
+All three are regenerated in a second or two: `make dump`, `make duckdb`, `make csv`.
 
 ---
 
-## How the data flows - read ARCHITECTURE.md FOR MORE
+## How the data flows - read ARCHITECTURE.md for more
 
 Each layer reads what the layer above it wrote. Nothing skips ahead, and every layer is
 **idempotent** — re-running fills gaps instead of duplicating.

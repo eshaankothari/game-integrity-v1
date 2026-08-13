@@ -59,16 +59,58 @@ def _to_duck_sql(sql):
     return re.sub(r"%\(([a-zA-Z_][a-zA-Z0-9_]*)\)s", r"$\1", sql).replace("%s", "?")
 
 
+# --- csv backend ------------------------------------------------------------
+#
+# The CSV export is queried through DuckDB rather than pandas, which is what makes it
+# cheap: every JOIN, window function and percentile_cont in server/app.py runs unchanged.
+# The files are the storage format; DuckDB is only the engine reading them.
+#
+# Loaded ONCE into an in-memory database, not registered as views. A view re-parses the
+# CSV on every query, and player_game_events is 422,884 rows -- that is a re-scan per
+# shot-chart request. Loading up front costs about a second at startup and nothing after.
+#
+# TYPES COME FROM _types.json, NEVER FROM INFERENCE. read_csv_auto reads game_id
+# '0022300016' as the integer 22300016, dropping the '002' regular-season prefix and
+# breaking every join to `games` -- silently, because the query still succeeds.
+
+_csv_con = None
+
+
+def _csv_connect():
+    global _csv_con
+    if _csv_con is not None:
+        return _csv_con
+    import json
+
+    import duckdb
+    d = config.CSV_DIR
+    manifest = d / "_types.json"
+    if not manifest.exists():
+        raise SystemExit(
+            f"{d} has no _types.json, so column types are unknown and inferring them "
+            f"would corrupt game_id.\n\nRegenerate the export with:\n"
+            f"    python -m pipeline.tools.to_csv run --out {d.name}")
+    types = json.loads(manifest.read_text())
+    con = duckdb.connect(":memory:")
+    for table, cols in types.items():
+        f = d / f"{table}.csv"
+        if not f.exists():
+            continue
+        spec = ", ".join(f"'{c}': '{t}'" for c, t in cols.items())
+        con.execute(f'CREATE TABLE "{table}" AS '
+                    f"SELECT * FROM read_csv('{f}', header=true, columns={{{spec}}})")
+    _csv_con = con
+    return con
+
+
 def rows(sql, params=None, one=False):
     """Run a read query -> list of dicts (or one dict / None when `one`).
 
-    Works on either backend. Callers pass psycopg-style SQL and a dict (named) or
+    Works on all three backends. Callers pass psycopg-style SQL and a dict (named) or
     sequence (positional) of parameters, exactly as before.
     """
-    if config.BACKEND == "duckdb":
+    if config.BACKEND in ("duckdb", "csv"):
         import re
-
-        import duckdb
         duck_sql = _to_duck_sql(sql)
         # psycopg IGNORES dict keys the query does not use; DuckDB raises. The API
         # builds one params dict and reuses it across a COUNT and a paged SELECT, so
@@ -77,13 +119,19 @@ def rows(sql, params=None, one=False):
         if isinstance(params, dict):
             used = set(re.findall(r"\$([a-zA-Z_][a-zA-Z0-9_]*)", duck_sql))
             params = {k: v for k, v in params.items() if k in used}
-        con = duckdb.connect(config.GI_DB, read_only=True)
-        try:
-            cur = con.execute(duck_sql, params or [])
+        if config.BACKEND == "csv":
+            cur = _csv_connect().execute(duck_sql, params or [])
             cols = [d[0] for d in cur.description]
             out = [dict(zip(cols, r)) for r in cur.fetchall()]
-        finally:
-            con.close()
+        else:
+            import duckdb
+            con = duckdb.connect(config.GI_DB, read_only=True)
+            try:
+                cur = con.execute(duck_sql, params or [])
+                cols = [d[0] for d in cur.description]
+                out = [dict(zip(cols, r)) for r in cur.fetchall()]
+            finally:
+                con.close()
     else:
         from psycopg.rows import dict_row
         with connect() as conn, conn.cursor(row_factory=dict_row) as cur:

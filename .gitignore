@@ -46,3 +46,9 @@ frontend/.vite/
 # artifact, but it is also the whole point of the handoff: 21MB means a recipient
 # clones and runs, with no database server to install or dump to restore.
 # Regenerate from Postgres with `make duckdb`.
+
+# --- CSV export (make csv) ---
+# NOT committed, unlike game_integrity.duckdb. It is 102 MB -- three times the .duckdb
+# file it is generated from -- and every byte of it is reproducible in under two seconds
+# by `make csv`, which falls back to the committed .duckdb when there is no Postgres.
+# Committing it would triple the clone size to ship a redundant copy of the same rows.

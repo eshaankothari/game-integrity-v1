@@ -18,7 +18,7 @@ game-integrity-v1/
 │   ├── ingest/     L0-L4   the 13 loaders
 │   ├── score/      L5-L6   standardize · export_candidates · residualize
 │   ├── explain/    L8-L9   optional · packet · summarize · LLM review
-│   └── tools/              to_duckdb
+│   └── tools/              to_duckdb · to_csv
 ├── server/app.py   L7      read-only FastAPI
 ├── frontend/               React dashboard
 ├── tests/                  experiments + figures (not a test suite)
@@ -51,19 +51,27 @@ a dependency on python-dotenv.
 | `MARKET` | `"player_points"` | adding rebounds/assists props |
 | `REGIONS` / `BOOK` | `"us"` / `"fanduel"` | `REGIONS` decides what is *fetched* (all ~10 US books, same price); `BOOK` decides which one is *scored* |
 | `DATABASE_URL` | `postgresql:///game_integrity_v1` | pointing at another Postgres |
-| `GI_DB` + `BACKEND` | unset → `"postgres"` | set `GI_DB=game_integrity.duckdb` and reads go to the file instead |
+| `GI_DB` + `BACKEND` | unset → `"postgres"` | `GI_DB=game_integrity.duckdb` → the file; `GI_DB=data` → the CSV export |
 | `LLM_PROVIDER`, `LLM_MODEL`, `LLM_PRICES` | Gemini by default | only `pipeline/llm_review/review.py` reads these |
 
-`BACKEND` is derived, not configured: `"duckdb" if GI_DB endswith .duckdb else "postgres"`.
+`BACKEND` is derived from the SHAPE of `GI_DB`, not configured separately — a `.duckdb`
+suffix means the file, a directory means the CSV export, unset means Postgres. One switch,
+so there is no second one to forget.
 
 ### `pipeline/core/db.py` — the only file that talks to a database
 
 **READ path (works on both backends):**
 
-- **`rows(sql, params, one=False)`** — the one function the API/frontend calls. On DuckDB it
-  translates the dialect via `_to_duck_sql()` (`%(name)s` → `$name`, `%s` → `?`) and
-  subsets the params dict, because DuckDB raises on unused keys where psycopg ignores
-  them. Returns a list of dicts, or one dict / `None` when `one=True`.
+- **`rows(sql, params, one=False)`** — the one function the API/frontend calls, on all
+  three backends. For DuckDB and CSV it translates the dialect via `_to_duck_sql()`
+  (`%(name)s` → `$name`, `%s` → `?`) and subsets the params dict, because DuckDB raises
+  on unused keys where psycopg ignores them. Returns a list of dicts, or one dict /
+  `None` when `one=True`.
+- **`_csv_connect()`** — builds the CSV backend once per process: an in-memory DuckDB
+  loaded from `data/*.csv` using the types in `_types.json`. **Loaded as tables, not
+  views** — a view re-parses 422,884 pbp rows on every shot-chart request. Costs ~2s on
+  the first query and nothing after. It refuses to run without the manifest, because
+  inferring types reads `game_id` `'0022300016'` as an integer and breaks every join.
 - **`connect(autocommit=False)`** — psycopg context manager, commits on clean exit. If
   Postgres is unreachable *and* the DuckDB file exists, it exits with the `GI_DB=` hint
   rather than a raw socket error.
@@ -323,4 +331,5 @@ driven by what's in the tables, not by the constant, so scope flags work through
 **Rehearse cheaply before spending** → `--date 2024-01-15` on any paid loader runs the
 identical pipeline over ~10 events.
 
-**Regenerate the handoff artifacts** → `make duckdb` and `make dump`, a second or two each.
+**Regenerate the handoff artifacts** → `make duckdb`, `make dump`, `make csv` — a second or
+two each. `make csv` works with no Postgres; it falls back to the committed `.duckdb`.
