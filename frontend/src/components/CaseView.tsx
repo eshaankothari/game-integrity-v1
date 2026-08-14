@@ -1,7 +1,7 @@
 import NumberFlow from "@number-flow/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CaseDetail, fetchCase, fetchPlayerCareer, SeasonGame } from "../api";
 import { RED_SCORE, fmtScore, isConfirmed } from "../severity";
 import { LineHistory } from "./LineHistory";
@@ -415,6 +415,23 @@ function CareerStrip({ playerId }: { playerId: number }) {
     queryKey: ["career", playerId],
     queryFn: () => fetchPlayerCareer(playerId),
   });
+  // The draw-in waits for the strip to actually SCROLL INTO VIEW: it sits at
+  // the bottom of the case file, and a mount-time animation would be long
+  // finished before the reader gets there. Segments render paused; the
+  // observer flips them running the first time a third of the strip shows.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => setSeen(false), [playerId]);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || seen) return;
+    const io = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && setSeen(true),
+      { threshold: 0.35 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [seen, data]);
   if (!data || data.stints.length === 0) return null;
 
   // Stints arrive in career order (seq); group per season, order preserved.
@@ -467,8 +484,12 @@ function CareerStrip({ playerId }: { playerId: number }) {
 
   return (
     <>
-      <div className="career-scroll">
-        <div className="career-strip" role="img"
+      {/* the header lives here so it vanishes with the strip when there is
+          no recorded history */}
+      <div className="subhead">Career team history</div>
+      {/* keyed on the player so the draw-in replays when the case changes */}
+      <div className="career-scroll" key={playerId} ref={wrapRef}>
+        <div className={`career-strip${seen ? " seen" : ""}`} role="img"
              aria-label={`Career team history: ${span
                .map((s) => `${s} ${(bySeason.get(s) ?? ["no NBA team"]).join(" then ")}`)
                .join(", ")}`}>
@@ -478,7 +499,7 @@ function CareerStrip({ playerId }: { playerId: number }) {
             return (
               <div key={i}
                    className={`cs-seg${seg.team ? "" : " cs-gap"}${seg.moved ? " cs-move" : ""}`}
-                   style={{ "--w": seg.weight } as React.CSSProperties}
+                   style={{ "--w": seg.weight, animationDelay: `${i * 0.07}s` } as React.CSSProperties}
                    title={`${label} · ${seg.team ?? "no NBA team"}`}>
                 <div className="cs-tenure">
                   {seg.team && <span className="cs-code">{seg.team}</span>}
@@ -494,7 +515,7 @@ function CareerStrip({ playerId }: { playerId: number }) {
       </div>
       <div className="source">
         {span[0].slice(0, 4)}–{span[span.length - 1]}: the instability rate counts
-        each team change (cyan tick) once and each dashed gap season twice
+        each team change (cyan tick) and each dashed gap season
         {moves + gaps > 0
           ? ` — ${moves} change${moves === 1 ? "" : "s"}, ${gaps} gap season${gaps === 1 ? "" : "s"} here`
           : ""}.
@@ -749,37 +770,30 @@ export function CaseView({ playerId, gameId }: Props) {
 
       <SectionHead title={ex("Motive")} sub="his financial incentive"
                    kind="mtv" value={c.g_motive} />
-      <div className="motive-big">
-        <b>{money(c.salary)}</b>
-        <span>
-          {c.has_listed_salary
-            ? `Bottom ${Math.round((c.salary_pct ?? 0) * 100)}% of league salaries`
-            : "no listed salary — a two-way / 10-day contract: the lowest-paid, most exposed profile, so it takes maximum motive weight"}
-        </span>
-      </div>
-      {/* The motive block's second term: the career-instability RATE (team
-          changes + gap seasons, gaps weighted double, per season of span). The
-          payload carries the rate and the gap-season count, not the team-change
-          count, so the gloss names only what the numbers actually are. Null --
-          older backend, or a player with no career row -- renders nothing:
-          missing history is absence, not a rate of zero. */}
-      {c.instability_career != null && (
-        <div className="motive-big">
-          <b>{c.instability_career.toFixed(2)}</b>
-          <span>
-            {"career instability — team changes + gap seasons per season of his career span"}
-            {c.gap_seasons != null && c.gap_seasons > 0 &&
-              ` · ${c.gap_seasons} gap season${c.gap_seasons === 1 ? "" : "s"} with no NBA team, weighted double`}
-          </span>
+      {/* Motive rendered as the equation it is: the salary term and the
+          career term side by side with a quiet plus between them (they stack
+          on a narrow column and the plus becomes the joint). The instability
+          term shows as its PICTURE, not a printed rate -- which teams, which
+          seasons, where the gaps were; CareerStrip renders nothing when there
+          is no recorded history, so absence never reads as stability. */}
+      <div className="motive-eq">
+        <div className="mv-term">
+          <div className="subhead">Salary</div>
+          <div className="mv-big">{money(c.salary)}</div>
+          <div className="mv-gloss">
+            {c.has_listed_salary
+              ? `Bottom ${Math.round((c.salary_pct ?? 0) * 100)}% of league salaries`
+              : "no listed salary — a two-way / 10-day contract: the lowest-paid, most exposed profile, so it takes maximum motive weight"}
+          </div>
+          <div className="mv-foot">
+            Research shows that higher-salaried players are much less likely to
+            engage in insider trading.
+          </div>
         </div>
-      )}
-      {/* The picture behind the instability line above: which teams, which
-          seasons, where the gaps were. Fetches its own per-player payload and
-          renders nothing when there is no recorded history. */}
-      <CareerStrip playerId={c.player_id} />
-      <div className="source">
-        Motive is 0.5 salary (inverted percentile — the less a player earns, the more
-        a fixed bet is worth relative to his career) + 0.5 career instability
+        <div className="mv-plus" aria-hidden="true">+</div>
+        <div className="mv-term mv-career">
+          <CareerStrip playerId={c.player_id} />
+        </div>
       </div>
       </motion.div>
     </div>

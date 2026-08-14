@@ -87,7 +87,7 @@ LLM_PRICES = {
 # strongest finding) and cut 7 kept Porter only via a missing-experience accident
 # while its intent (career precarity) is now measured directly by instability.
 CUTS_OFF = {int(x) for x in
-            os.environ.get("GI_CUTS_OFF", "4,5,7").split(",") if x.strip()}
+            os.environ.get("GI_CUTS_OFF", "4,5").split(",") if x.strip()}
 
 # --- scope for v1: league-wide, 2023-24 regular season, points props ---
 SEASON = "2023-24"

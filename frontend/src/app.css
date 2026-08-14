@@ -542,10 +542,38 @@ table.ledger { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .cal-cell.mini.cur { outline: 2px solid var(--neg); outline-offset: 1px; }
 .toggle.dl { display: inline-block; text-decoration: none; background: var(--rule); color: var(--bg); border-color: var(--rule); font-weight: 600; }
 
-/* motive's headline figure: the salary IS the evidence */
-.motive-big { display: flex; align-items: baseline; gap: 14px; margin: 8px 0 2px; flex-wrap: wrap; }
-.motive-big b { font-family: var(--display); font-size: clamp(22px, 1.8vw, 28px); font-weight: 750; letter-spacing: -0.02em; }
-.motive-big span { font-size: 11px; color: var(--muted); max-width: 52ch; line-height: 1.5; }
+/* motive as the equation it is: the salary term and the career term side by
+   side, each under its own eyebrow, joined by a quiet plus. Roomier than the
+   ledger tables on purpose -- this exhibit is two facts, not twenty, and the
+   air is what makes the salary read as a headline. Flex-wrap stacks the
+   terms on a narrow column and the plus becomes the joint between them. */
+.motive-eq {
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  gap: 10px 34px; margin: 2px 0 12px;
+}
+.mv-term { min-width: 0; }
+.mv-career { flex: 1 1 320px; }
+/* one shared rhythm for BOTH terms: eyebrows at 12px, first content line at
+   8px under them -- so the titles and the salary/timeline row align exactly */
+.motive-eq .subhead { margin-top: 12px; }
+.motive-eq .career-strip { margin-top: 8px; }
+.mv-big {
+  margin-top: 8px;
+  font-family: var(--display); font-size: clamp(26px, 2.2vw, 34px);
+  font-weight: 750; letter-spacing: -0.02em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.mv-gloss { margin-top: 7px; font-size: 11px; color: var(--muted); max-width: 36ch; line-height: 1.55; }
+/* footnote under the salary term: the WHY of the inverse weighting, one
+   register fainter than the gloss so it reads as annotation, not evidence */
+.mv-foot { margin-top: 6px; font-size: 10px; color: var(--faint); max-width: 36ch; line-height: 1.5; }
+.mv-plus {
+  /* sits beside the salary figure in the row layout (eyebrow ~21px + 8px
+     figure margin), reads as the equation's joint when the terms stack */
+  margin-top: 31px;
+  font-family: var(--display); font-size: 19px; font-weight: 300;
+  color: var(--faint); line-height: 1;
+}
 
 /* the motive exhibit's career timeline: TENURE segments on one recessive
    baseline. Consecutive seasons with the same team merge into one rounded
@@ -571,6 +599,22 @@ table.ledger { width: 100%; border-collapse: collapse; margin-top: 8px; }
   flex: var(--w) 1 calc(var(--w) * 34px);
   min-width: min-content;
   display: flex; flex-direction: column; gap: 3px;
+  /* career draws in left-to-right, one tenure at a time -- each segment
+     grows from its left edge in career order (delay set inline per index).
+     CSS-only and compositor-run, same budget as the watchlist rows. */
+  /* paused until the strip scrolls into view (.seen flips it running), so
+     the delay phase and the stagger both wait for the reader */
+  animation: cs-in 0.3s ease-out backwards;
+  animation-play-state: paused;
+  transform-origin: left center;
+}
+.career-strip.seen .cs-seg { animation-play-state: running; }
+@keyframes cs-in {
+  from { opacity: 0; transform: scaleX(0.55); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-seg { animation: none; }
 }
 .cs-tenure {
   position: relative; /* paints above the absolutely-positioned baseline */
