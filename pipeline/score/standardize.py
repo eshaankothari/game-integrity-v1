@@ -2,7 +2,7 @@
 
     performance   what he did on the floor, against two baselines plus the market's
     market        what the prices did before tip-off
-    motive        what he stood to lose: salary (0.75) + career instability (0.25)
+    motive        what he stood to lose: salary (0.5) + career instability (0.5)
 
     score     = 0.45*performance + 0.30*market + 0.25*motive     (raw, z-scale)
     score_100 = (score - min) / (max - min) * 100                (what the UI shows)
@@ -114,15 +114,15 @@ MARKET_W = {"p_price": 0.25, "p_line": 0.25, "line_mv": 0.25, "price_mv": 0.25}
 # the score cannot become a salary sort.
 BLOCK_W = {"performance": 0.45, "market": 0.30, "motive": 0.25}
 
-# WITHIN the motive block: salary carries 0.75, career instability 0.25. Instability
-# ((team changes + 2*gap seasons)/(span+1), from player_career) is held
-# at a quarter because (a) it overlaps salary -- the churned are also the cheap,
-# measured r = -0.21 between instability_career and salary percentile across the 406
-# listed-salary propped players (-0.10 row-weighted) -- so part of its content is
-# already in the block, and (b) it is measured against the NBA calendar only: G-League
-# churn between NBA stints is invisible here, partly proxied by gap_seasons, so the
-# stat is too coarse to carry more of the block than the direct dollars-at-risk term.
-MOTIVE_W = {"salary": 0.75, "instability": 0.25}
+# WITHIN the motive block: salary and career instability at 0.5 each. Instability is
+# ((team changes + 2*gap seasons)/(span+1), from player_career). KNOWN TENSIONS with
+# equal weighting, accepted deliberately: (a) it overlaps salary (r = -0.21 across the
+# 406 listed-salary propped players), so some content is double-counted; (b) every
+# labeled game improves when this weight rises BECAUSE both label players are
+# journeymen -- the two-player-overfit axis; (c) at 0.5 well-paid traded stars
+# (Porziņģis-shaped) rise ~3,000 rank_all places -- "well-traveled" partly outranking
+# "nothing to lose". Measured at 0.25/0.35/0.50 before adoption.
+MOTIVE_W = {"salary": 0.5, "instability": 0.5}
 
 # The nine involvement stats, each standardised separately then averaged. fga is
 # excluded: Game Score already charges -0.7 per attempt, so including it would count

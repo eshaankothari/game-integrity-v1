@@ -778,8 +778,8 @@ export function CaseView({ playerId, gameId }: Props) {
           renders nothing when there is no recorded history. */}
       <CareerStrip playerId={c.player_id} />
       <div className="source">
-        Motive is 0.75 salary (inverted percentile — research shows that higher-paid
-        players are less likely to engage in insider trading) + 0.25 career instability
+        Motive is 0.5 salary (inverted percentile — the less a player earns, the more
+        a fixed bet is worth relative to his career) + 0.5 career instability
       </div>
       </motion.div>
     </div>
